@@ -37,3 +37,4 @@ uv.lock
 # Runtime data (local)
 .nanobot/
 sessions/
+.claude/settings.json
