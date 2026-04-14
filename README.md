@@ -21,7 +21,7 @@
 ```bash
 git clone https://github.com/YS-BW/nanobot-mini.git
 cd nanobot-mini
-pip install -e .
+uv sync
 ```
 
 ## 🚀 快速开始
@@ -32,9 +32,9 @@ pip install -e .
 export API_KEY="sk-your-key-here"
 export LLM="gpt-4o"
 
-python -m nanobot_mini "你好"
-python -m nanobot_mini "帮我执行: ls -la /tmp"
-python -m nanobot_mini "帮我找一下 /tmp 下的所有 .txt 文件"
+uv run nanobot-mini "你好"
+uv run nanobot-mini "帮我执行: ls -la /tmp"
+uv run nanobot-mini "帮我找一下 /tmp 下的所有 .txt 文件"
 ```
 
 ### 使用本地模型
@@ -48,7 +48,7 @@ API_KEY=
 
 然后运行：
 ```bash
-python -m nanobot_mini "你好"
+uv run nanobot-mini "你好"
 ```
 
 ## ⚙️ 配置
