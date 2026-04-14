@@ -76,7 +76,7 @@ async def interactive_mode(config: Config):
     """交互模式：循环输入输出"""
     console = Console()
     console.print("[bold cyan]nanobot-mini[/bold cyan] 交互模式")
-    console.print("命令: /new 新会话, /clear 清空, /sessions 列出, /help 帮助, /exit 退出")
+    console.print("命令: /new 新会话, /session <name> 切换会话, /clear 清空, /sessions 列出, /help 帮助, /exit 退出")
     console.print()
 
     llm, registry, ctx_builder, sessions = _create_runner(config)
@@ -92,6 +92,16 @@ async def interactive_mode(config: Config):
 
             # 处理命令
             cmd = user_message.lower()
+            if cmd.startswith("/session "):
+                # 切换到指定会话
+                target = cmd[9:].strip()
+                if target:
+                    session = sessions.get_or_create(target)
+                    console.print(f"[green]已切换到会话: {session.key}[/green]")
+                else:
+                    console.print("[yellow]请指定会话名称，如: /session mychat[/yellow]")
+                continue
+
             if cmd in ("exit", "quit", "q"):
                 console.print("[yellow]再见![/yellow]")
                 break
@@ -126,12 +136,13 @@ async def interactive_mode(config: Config):
 
             if cmd == "/help":
                 console.print("\n可用命令:")
-                console.print("  /new        - 开启新会话")
-                console.print("  /clear     - 清空当前会话历史")
-                console.print("  /sessions  - 列出所有会话")
-                console.print("  /status    - 显示当前状态")
-                console.print("  /help      - 显示此帮助")
-                console.print("  /exit      - 退出程序")
+                console.print("  /new              - 开启新会话")
+                console.print("  /session <name>   - 切换到指定会话")
+                console.print("  /clear            - 清空当前会话历史")
+                console.print("  /sessions         - 列出所有会话")
+                console.print("  /status           - 显示当前状态")
+                console.print("  /help             - 显示此帮助")
+                console.print("  /exit             - 退出程序")
                 continue
 
             # 正常对话 - 显示思考动画
