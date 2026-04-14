@@ -30,7 +30,7 @@ def _create_runner(config: Config) -> tuple[LLM, ToolRegistry, ContextBuilder, S
 
 
 class ProgressBox:
-    """滚动进度显示框，仅用于工具执行过程"""
+    """滚动进度显示框"""
 
     def __init__(self, console: Console):
         self.console = console
@@ -40,7 +40,8 @@ class ProgressBox:
     def add(self, text: str):
         """添加一行"""
         self.lines.append(text)
-        if len(self.lines) > 15:
+        # 保持最多 20 行
+        if len(self.lines) > 20:
             self.lines.pop(0)
 
     def clear(self):
@@ -93,7 +94,6 @@ async def chat_once(
     max_iterations: int,
     max_history: int = 20,
     progress_callback: Callable[[str], None] | None = None,
-    stream_callback: Callable[[str], None] | None = None,
 ) -> str:
     """
     单次对话处理
@@ -107,7 +107,6 @@ async def chat_once(
         max_iterations: 最大迭代次数
         max_history: 保留的历史消息数量
         progress_callback: 进度回调函数
-        stream_callback: 流式输出回调
 
     Returns:
         AI 回复内容
@@ -116,7 +115,7 @@ async def chat_once(
     messages = ctx_builder.build_messages(history, user_message)
 
     runner = AgentRunner(llm, registry, max_iterations=max_iterations)
-    response = await runner.run_with_stream(messages, progress_callback, stream_callback)
+    response = await runner.run(messages, progress_callback=progress_callback)
 
     # 保存对话历史（跳过 system prompt）
     for msg in messages[1:]:
@@ -153,6 +152,7 @@ async def interactive_mode(config: Config):
             if not user_message:
                 continue
 
+            # 处理命令
             cmd = user_message.lower()
             if cmd.startswith("/session "):
                 target = cmd[9:].strip()
@@ -206,18 +206,13 @@ async def interactive_mode(config: Config):
                 console.print("  /exit             - 退出程序")
                 continue
 
-            # 正常对话
+            # 正常对话 - 显示进度框
             progress = ProgressBox(console)
             progress.start()
 
             def on_progress(msg: str):
                 progress.add(msg)
                 progress.update()
-
-            streamed_content = []
-
-            def on_stream(delta: str):
-                streamed_content.append(delta)
 
             try:
                 reply = await chat_once(
@@ -228,14 +223,11 @@ async def interactive_mode(config: Config):
                     user_message,
                     config.max_iterations,
                     progress_callback=on_progress,
-                    stream_callback=on_stream,
                 )
             finally:
                 progress.stop()
 
-            # 流式输出最终回复
-            full_reply = "".join(streamed_content) if streamed_content else reply
-            console.print(f"[cyan]nanobot:[/cyan] {full_reply}")
+            console.print(f"[cyan]nanobot:[/cyan] {reply}")
 
         except KeyboardInterrupt:
             console.print("\n\n[yellow]再见![/yellow]")
@@ -272,11 +264,6 @@ async def _main():
                 progress.add(msg)
                 progress.update()
 
-            streamed_content = []
-
-            def on_stream(delta: str):
-                streamed_content.append(delta)
-
             try:
                 reply = await chat_once(
                     llm,
@@ -286,13 +273,11 @@ async def _main():
                     user_message,
                     config.max_iterations,
                     progress_callback=on_progress,
-                    stream_callback=on_stream,
                 )
             finally:
                 progress.stop()
 
-            full_reply = "".join(streamed_content) if streamed_content else reply
-            console.print(f"\n[cyan]nanobot:[/cyan] {full_reply}")
+            console.print(f"[cyan]nanobot:[/cyan] {reply}")
     except KeyboardInterrupt:
         console.print("\n\n[yellow]再见![/yellow]")
 
