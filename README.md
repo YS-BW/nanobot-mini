@@ -1,11 +1,11 @@
-# nanobot-mini
+# 🍌 BananaBot
 
-> 🤖 轻量级 AI Agent 框架
+> 杠精附体的 AI 助手，贴吧对线王 😏
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-一个精简的 AI Agent 实现，支持 LLM 对话和工具调用，基于 nanobot 思想构建。
+一个带灵魂的 AI Agent 实现，混迹贴吧多年的"杠精+梗王"，边喷边干活那种。
 
 ## ✨ 特性
 
@@ -13,8 +13,18 @@
 - 🛠️ **工具系统**：可扩展的工具注册机制（内置 exec 工具）
 - 💬 **会话管理**：多会话支持，JSONL 持久化
 - ⚙️ **灵活配置**：.env 文件 + 环境变量
-- 🎨 **友好交互**：Rich 终端输出，思考动画
+- 🎨 **友好交互**：Rich 终端输出，滚动进度框
 - 🤖 **兼容性强**：支持 OpenAI 兼容 API（Ollama、vLLM、Mimo 等）
+- 🗣️ **独特人格**：贴吧老哥风格，杠精附体，梗多话糙
+
+## 🎭 人格预览
+
+```
+卧槽，终于来点实际的了！刚才一直"你好""你好"的，
+我还以为你卡带了呢 😏
+
+典中典，这目录结构整得跟个AI人格分裂似的 🤣
+```
 
 ## 📦 安装
 
@@ -40,7 +50,7 @@ LLM=mimo-v2-pro
 
 ```bash
 # 单次对话
-uv run nanobot-mini "你好"
+uv run nanobot-mini "帮我执行 ls -la"
 
 # 交互模式
 uv run nanobot-mini
@@ -64,7 +74,7 @@ nanobot_mini/
 ├── __init__.py          # 包入口
 ├── __main__.py          # CLI 入口
 ├── config.py            # 配置管理
-├── context.py           # 系统提示词构建
+├── context.py           # 系统提示词构建（人格定义）
 ├── llm.py               # LLM 调用封装
 ├── runner.py            # Agent 循环
 ├── session.py           # 会话管理
