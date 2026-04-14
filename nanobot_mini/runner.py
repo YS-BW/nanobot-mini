@@ -46,7 +46,7 @@ class AgentRunner:
             iteration += 1
 
             # 调用 LLM
-            _progress(f"[cyan]思考中... (第 {iteration} 轮)[/cyan]")
+            _progress(f"[yellow]🍌 思考中... (第 {iteration} 轮)[/yellow]")
             response = await self.llm.chat(
                 messages=messages,
                 tools=(

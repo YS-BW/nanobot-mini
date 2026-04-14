@@ -1,4 +1,4 @@
-"""nanobot-mini CLI 入口"""
+"""BananaBot CLI 入口"""
 
 import asyncio
 import signal
@@ -53,7 +53,7 @@ class ProgressBox:
         if not self.lines:
             return Panel(
                 Text("等待中...", style="dim"),
-                title="[cyan]执行过程[/cyan]",
+                title="[yellow]🍌 BananaBot 思考中[/yellow]",
                 border_style="cyan",
             )
         content = "\n".join(self.lines)
@@ -137,14 +137,14 @@ async def chat_once(
 async def interactive_mode(config: Config):
     """交互模式：循环输入输出"""
     console = Console()
-    console.print("[bold cyan]nanobot-mini[/bold cyan] 交互模式")
+    console.print("[bold yellow]🍌 BananaBot[/bold yellow] 交互模式")
     console.print("命令: /new 新会话, /session <name> 切换会话, /clear 清空, /sessions 列出, /help 帮助, /exit 退出")
     console.print()
 
     llm, registry, ctx_builder, sessions = _create_runner(config)
     session = sessions.get_or_create("cli:default")
 
-    console.print("欢迎使用 nanobot-mini！输入 /help 查看命令列表。\n")
+    console.print("🍌 我是 BananaBot，有啥需要帮忙的尽管说！输入 /help 查看命令列表。\n")
 
     while True:
         try:
@@ -227,7 +227,7 @@ async def interactive_mode(config: Config):
             finally:
                 progress.stop()
 
-            console.print(f"[cyan]nanobot:[/cyan] {reply}")
+            console.print(f"[yellow]🍌 BananaBot:[/yellow] {reply}")
 
         except KeyboardInterrupt:
             console.print("\n\n[yellow]再见![/yellow]")
@@ -277,7 +277,7 @@ async def _main():
             finally:
                 progress.stop()
 
-            console.print(f"[cyan]nanobot:[/cyan] {reply}")
+            console.print(f"[yellow]🍌 BananaBot:[/yellow] {reply}")
     except KeyboardInterrupt:
         console.print("\n\n[yellow]再见![/yellow]")
 
