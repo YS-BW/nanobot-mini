@@ -3,7 +3,7 @@
 提供工具基类、工具注册表和内置工具
 """
 
-from . import Tool
+from .base import Tool
 from .registry import ToolRegistry
 from .exec import ExecTool
 

@@ -1,5 +1,5 @@
-"""极简 LLM 调用，封装 OpenAI chat API"""
-import os
+"""LLM 调用封装"""
+
 import json
 import httpx
 from typing import AsyncIterator
@@ -8,10 +8,17 @@ from .types import LLMResponse, ToolCall
 
 
 class LLM:
-    def __init__(self, base_url: str | None = None, api_key: str | None = None, model: str = "gpt-4o"):
-        self.base_url = (base_url or os.environ.get("BASE_URL", "https://api.openai.com/v1")).rstrip("/")
-        self.api_key = api_key or os.environ.get("API_KEY", "") or ""
-        self.model = model
+    """OpenAI 兼容的 LLM 调用封装"""
+
+    def __init__(
+        self,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        model: str | None = None,
+    ):
+        self.base_url = (base_url or "https://api.openai.com/v1").rstrip("/")
+        self.api_key = api_key or ""
+        self.model = model or "gpt-4o"
 
     async def chat(
         self,
@@ -19,10 +26,21 @@ class LLM:
         tools: list[dict] | None = None,
         stream: bool = False,
     ) -> LLMResponse:
-        """单次 LLM 调用"""
+        """
+        调用 LLM 生成回复
+
+        Args:
+            messages: 消息列表
+            tools: 工具定义列表
+            stream: 是否使用流式返回
+
+        Returns:
+            LLMResponse 对象
+        """
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+
         payload = {
             "model": self.model,
             "messages": messages,
@@ -48,11 +66,13 @@ class LLM:
         if msg.get("tool_calls"):
             for i, tc in enumerate(msg["tool_calls"]):
                 tc_id = tc.get("id") or f"tool_{i}_{tc['function']['name']}"
-                tool_calls.append(ToolCall(
-                    id=tc_id,
-                    name=tc["function"]["name"],
-                    arguments=json.loads(tc["function"]["arguments"]),
-                ))
+                tool_calls.append(
+                    ToolCall(
+                        id=tc_id,
+                        name=tc["function"]["name"],
+                        arguments=json.loads(tc["function"]["arguments"]),
+                    )
+                )
 
         return LLMResponse(
             content=msg.get("content"),
@@ -61,12 +81,24 @@ class LLM:
         )
 
     async def chat_stream(
-        self, messages: list[dict], tools: list[dict] | None = None
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
     ) -> AsyncIterator[str]:
-        """流式调用，返回 content delta"""
+        """
+        流式调用 LLM，返回 content delta
+
+        Args:
+            messages: 消息列表
+            tools: 工具定义列表
+
+        Yields:
+            增量内容片段
+        """
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+
         payload = {
             "model": self.model,
             "messages": messages,

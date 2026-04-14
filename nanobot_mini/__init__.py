@@ -1,7 +1,7 @@
-"""nanobot-mini: nanobot 最小复刻版"""
+"""nanobot-mini 入口"""
 
 from .llm import LLM
-from .tools import ToolRegistry, ExecTool, Tool
+from .tools import Tool, ToolRegistry, ExecTool
 from .context import ContextBuilder
 from .session import Session, SessionManager
 from .runner import AgentRunner
@@ -10,9 +10,9 @@ from .types import LLMResponse, ToolCall
 
 __all__ = [
     "LLM",
+    "Tool",
     "ToolRegistry",
     "ExecTool",
-    "Tool",
     "ContextBuilder",
     "Session",
     "SessionManager",

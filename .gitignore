@@ -33,3 +33,7 @@ Thumbs.db
 # Project specific
 nanobot_mini.egg-info/
 uv.lock
+
+# Runtime data (local)
+.nanobot/
+sessions/
