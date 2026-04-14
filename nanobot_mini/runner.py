@@ -1,6 +1,7 @@
 """Agent 运行器 - 核心 LLM ↔ 工具循环"""
 
 import json
+from typing import Callable
 
 from .llm import LLM
 from .tools import ToolRegistry
@@ -23,24 +24,29 @@ class AgentRunner:
     async def run(
         self,
         messages: list[dict],
-        stream_callback=None,
+        progress_callback: Callable[[str], None] | None = None,
     ) -> LLMResponse:
         """
         执行 Agent 循环
 
         Args:
             messages: 初始消息列表（包含 system prompt）
-            stream_callback: 流式输出回调函数
+            progress_callback: 进度回调，用于显示中间过程
 
         Returns:
             最终 LLM 响应
         """
         iteration = 0
 
+        def _progress(msg: str):
+            if progress_callback:
+                progress_callback(msg)
+
         while iteration < self.max_iterations:
             iteration += 1
 
             # 调用 LLM
+            _progress(f"[cyan]思考中... (第 {iteration} 轮)[/cyan]")
             response = await self.llm.chat(
                 messages=messages,
                 tools=(
@@ -74,9 +80,19 @@ class AgentRunner:
 
             # 执行工具
             for tc in response.tool_calls:
+                args_str = ", ".join(
+                    f"{k}={repr(v)[:50]}" for k, v in tc.arguments.items()
+                )
+                _progress(f"[yellow]⚡ 调用工具:[/yellow] [green]{tc.name}[/green]({args_str})")
+
                 result, error = await self.registry.execute(tc.name, tc.arguments)
                 if error:
+                    _progress(f"[red]✗ 错误: {error}[/red]")
                     result = f"[错误] {error}"
+
+                # 截断过长输出
+                display_result = result[:500] + "..." if len(result) > 500 else result
+                _progress(f"[dim]└ 结果:[/dim] {display_result}[/dim]")
 
                 tool_msg = {
                     "role": "tool",

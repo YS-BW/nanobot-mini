@@ -4,8 +4,12 @@ import asyncio
 import signal
 import sys
 from datetime import datetime
+from typing import Callable
 
 from rich.console import Console
+from rich.live import Live
+from rich.panel import Panel
+from rich.text import Text
 
 from .llm import LLM
 from .tools import ToolRegistry, ExecTool
@@ -25,6 +29,62 @@ def _create_runner(config: Config) -> tuple[LLM, ToolRegistry, ContextBuilder, S
     return llm, registry, ctx_builder, sessions
 
 
+class ProgressBox:
+    """滚动进度显示框"""
+
+    def __init__(self, console: Console):
+        self.console = console
+        self.lines: list[str] = []
+        self._live: Live | None = None
+
+    def add(self, text: str):
+        """添加一行"""
+        self.lines.append(text)
+        # 保持最多 20 行
+        if len(self.lines) > 20:
+            self.lines.pop(0)
+
+    def clear(self):
+        """清空"""
+        self.lines.clear()
+
+    def _render(self) -> Panel:
+        """渲染面板"""
+        if not self.lines:
+            return Panel(
+                Text("等待中...", style="dim"),
+                title="[cyan]执行过程[/cyan]",
+                border_style="cyan",
+            )
+        content = "\n".join(self.lines)
+        return Panel(
+            Text(content, style="white"),
+            title="[cyan]执行过程[/cyan]",
+            border_style="cyan",
+        )
+
+    def start(self):
+        """开始实时显示"""
+        self._live = Live(
+            self._render(),
+            console=self.console,
+            auto_refresh=0.1,
+            transient=False,
+        )
+        self._live.start()
+
+    def update(self):
+        """更新显示"""
+        if self._live:
+            self._live.update(self._render())
+
+    def stop(self):
+        """停止显示"""
+        if self._live:
+            self._live.stop()
+            self._live = None
+
+
 async def chat_once(
     llm: LLM,
     registry: ToolRegistry,
@@ -33,6 +93,7 @@ async def chat_once(
     user_message: str,
     max_iterations: int,
     max_history: int = 20,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> str:
     """
     单次对话处理
@@ -45,6 +106,7 @@ async def chat_once(
         user_message: 用户输入
         max_iterations: 最大迭代次数
         max_history: 保留的历史消息数量
+        progress_callback: 进度回调函数
 
     Returns:
         AI 回复内容
@@ -53,7 +115,7 @@ async def chat_once(
     messages = ctx_builder.build_messages(history, user_message)
 
     runner = AgentRunner(llm, registry, max_iterations=max_iterations)
-    response = await runner.run(messages)
+    response = await runner.run(messages, progress_callback=progress_callback)
 
     # 保存对话历史（跳过 system prompt）
     for msg in messages[1:]:
@@ -93,7 +155,6 @@ async def interactive_mode(config: Config):
             # 处理命令
             cmd = user_message.lower()
             if cmd.startswith("/session "):
-                # 切换到指定会话
                 target = cmd[9:].strip()
                 if target:
                     session = sessions.get_or_create(target)
@@ -145,9 +206,15 @@ async def interactive_mode(config: Config):
                 console.print("  /exit             - 退出程序")
                 continue
 
-            # 正常对话 - 显示思考动画
-            console.print()
-            with console.status("[dim]nanobot 思考中...[/dim]", spinner="dots"):
+            # 正常对话 - 显示进度框
+            progress = ProgressBox(console)
+            progress.start()
+
+            def on_progress(msg: str):
+                progress.add(msg)
+                progress.update()
+
+            try:
                 reply = await chat_once(
                     llm,
                     registry,
@@ -155,7 +222,11 @@ async def interactive_mode(config: Config):
                     session,
                     user_message,
                     config.max_iterations,
+                    progress_callback=on_progress,
                 )
+            finally:
+                progress.stop()
+
             console.print(f"[cyan]nanobot:[/cyan] {reply}")
 
         except KeyboardInterrupt:
@@ -165,7 +236,6 @@ async def interactive_mode(config: Config):
 
 def main():
     """同步入口，供 console script 调用"""
-    # 注册信号处理器
     def _handle_sigint(_signum, _frame):
         print("\nGoodbye!")
         sys.exit(0)
@@ -181,15 +251,20 @@ async def _main():
 
     try:
         if len(sys.argv) < 2:
-            # 交互模式
             await interactive_mode(config)
         else:
-            # 单次模式
             user_message = " ".join(sys.argv[1:])
             llm, registry, ctx_builder, sessions = _create_runner(config)
             session = sessions.get_or_create("cli:default")
 
-            with console.status("[dim]nanobot 思考中...[/dim]", spinner="dots"):
+            progress = ProgressBox(console)
+            progress.start()
+
+            def on_progress(msg: str):
+                progress.add(msg)
+                progress.update()
+
+            try:
                 reply = await chat_once(
                     llm,
                     registry,
@@ -197,7 +272,11 @@ async def _main():
                     session,
                     user_message,
                     config.max_iterations,
+                    progress_callback=on_progress,
                 )
+            finally:
+                progress.stop()
+
             console.print(f"[cyan]nanobot:[/cyan] {reply}")
     except KeyboardInterrupt:
         console.print("\n\n[yellow]再见![/yellow]")
