@@ -1,0 +1,12 @@
+[project]
+name = "nanobot-mini"
+version = "0.1.0"
+description = "nanobot 最小复刻版"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.25.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+nanobot-mini = "nanobot_mini.__main__:main"
