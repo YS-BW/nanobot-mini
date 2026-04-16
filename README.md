@@ -29,16 +29,19 @@
 │       │ messages                                       │
 │  ┌────┴─────┐    ┌──────────────┐                   │
 │  │ Context   │───►│   Session    │                   │
-│  │ Builder   │    │ (compact)    │                   │
+│  │ Builder   │    │ (compact)   │                   │
 │  └───────────┘    └──────────────┘                   │
 └─────────────────────────────────────────────────────────┘
 ```
 
 **关键模块**：
-- `runner.py` — Agent 循环核心，LLM ↔ 工具调用
-- `context.py` — 上下文构建，system prompt + session 拼接
-- `session.py` — 会话管理，自动 compact 机制
-- `tools/` — 可扩展工具注册系统
+
+| 模块 | 文件 | 说明 | 设计文档 |
+|------|------|------|----------|
+| Agent 循环 | `runner.py` | LLM ↔ 工具调用 | - |
+| 上下文构建 | `context.py` | system prompt + session 拼接 | - |
+| 会话管理 | `session/` | JSONL 持久化 | [记忆与上下文压缩系统设计](docs/记忆与上下文压缩系统设计.md) |
+| 工具系统 | `tools/` | 可扩展工具注册 | - |
 
 ## 📦 安装
 
@@ -89,6 +92,8 @@ uv run nanobot-mini "帮我执行 ls -la"
 
 ## 🧠 上下文管理
 
+> 设计文档：[记忆与上下文压缩系统设计](docs/记忆与上下文压缩系统设计.md)
+
 BananaBot 采用**分层记忆**策略：
 
 ```
@@ -125,6 +130,14 @@ class MyTool(Tool):
     async def execute(self, query: str, **kwargs) -> str:
         return f"处理结果: {query}"
 ```
+
+## 📋 TODO
+
+- [ ] 持久化工具注册（重启后保留）
+- [ ] 工具调用权限控制
+- [ ] 项目级记忆隔离
+- [ ] 多模型支持
+- [ ] 交互模式命令补全
 
 ## 📊 技术栈
 
