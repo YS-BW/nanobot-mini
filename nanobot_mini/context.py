@@ -1,7 +1,15 @@
 """消息上下文构建器"""
 
+import json
 import platform
 from datetime import datetime
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+from .memory import MemoryStore
+
+if TYPE_CHECKING:
+    from .session import Session
 
 
 def _get_platform_policy() -> str:
@@ -86,7 +94,8 @@ SYSTEM_PROMPT_TEMPLATE = """# 🍌 BananaBot
 ### exec — 执行 Shell 命令
 - 功能: 执行 Shell 命令并返回输出
 - 参数: command (命令), timeout (超时秒数，默认 60)
-- 用工具直接干，别废话！
+- 只有当用户明确要求执行命令、或需要获取信息时才使用
+- 日常对话直接回复，不需要调用工具
 
 ## 运行信息
 - 系统: {system} {machine}
@@ -98,17 +107,38 @@ SYSTEM_PROMPT_TEMPLATE = """# 🍌 BananaBot
 """
 
 
+def _load_summary(session) -> str:
+    """加载 session 的 summary.jsonl 内容"""
+    if not session.summary_path or not session.summary_path.exists():
+        return ""
+    try:
+        summaries = []
+        with open(session.summary_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    data = json.loads(line)
+                    summaries.append(data.get("summary", ""))
+        if summaries:
+            return "\n\n".join(f"## 会话摘要\n{ s}" for s in summaries if s)
+        return ""
+    except Exception:
+        return ""
+
+
 class ContextBuilder:
     """构建发送给 LLM 的消息列表"""
 
-    def __init__(self, workspace: str = "/tmp", timezone: str = "UTC"):
+    def __init__(self, workspace: Path, global_dir: Path, memory_store: MemoryStore | None = None):
         self.workspace = workspace
-        self.timezone = timezone
+        self.global_dir = global_dir
+        self.memory_store = memory_store or MemoryStore(workspace, global_dir)
 
     def build_messages(
         self,
         history: list[dict],
         current_message: str,
+        session=None,
     ) -> list[dict]:
         """
         构建消息列表
@@ -116,24 +146,52 @@ class ContextBuilder:
         Args:
             history: 历史消息列表
             current_message: 当前用户输入
+            session: Session 实例（可选，用于加载 summary.jsonl）
 
         Returns:
-            完整的消息列表，包含 system 消息、历史消息和当前消息
+            完整的消息列表，包含系统消息、历史消息和当前消息
         """
-        messages = [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT_TEMPLATE.format(
-                    system=platform.system(),
-                    machine=platform.machine(),
-                    python_version=platform.python_version(),
-                    time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    workspace=self.workspace,
-                    platform_policy=_get_platform_policy(),
-                ),
-            }
-        ]
+        parts = []
 
+        # 1. 全局 BANANA.md
+        global_banana = self.global_dir / "BANANA.md"
+        if global_banana.exists():
+            content = global_banana.read_text(encoding="utf-8")
+            parts.append(f"# 全局指令\n\n{content}")
+
+        # 2. 项目 BANANA.md（从 workspace 向上查找）
+        project_banana = MemoryStore.find_banana_md(self.workspace)
+        if project_banana:
+            content = project_banana.read_text(encoding="utf-8")
+            parts.append(f"# 项目指令\n\n{content}")
+
+        # 3. 记忆（session 目录下的 MEMORY.md）
+        if session:
+            memory_path = session.get_memory_path()
+            if memory_path and memory_path.exists():
+                content = memory_path.read_text(encoding="utf-8")
+                if content.strip():
+                    parts.append(f"# 记忆\n\n{content}")
+
+        # 4. 会话摘要（summary.jsonl）
+        if session:
+            summary_context = _load_summary(session)
+            if summary_context:
+                parts.append(f"# 会话摘要\n\n{summary_context}")
+
+        # 5. 系统提示词
+        parts.append(SYSTEM_PROMPT_TEMPLATE.format(
+            system=platform.system(),
+            machine=platform.machine(),
+            python_version=platform.python_version(),
+            time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            workspace=self.workspace,
+            platform_policy=_get_platform_policy(),
+        ))
+
+        system_content = "\n\n---\n\n".join(parts)
+
+        messages = [{"role": "system", "content": system_content}]
         messages.extend(history)
         messages.append({"role": "user", "content": current_message})
 

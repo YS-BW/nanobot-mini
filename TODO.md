@@ -29,23 +29,42 @@
   2. 超过预算时，从后往前截断消息
   3. 保留 system prompt 和最近 N 条
 
-### 2.2 [ ] 记忆固化（Consolidator 简化版）
-- **描述**: 把旧消息总结后存到文件
-- **修改文件**: `runner.py`, `session.py`
-- **参考 nanobot**: `agent/memory.py` 中 Consolidator
-- **实现思路**:
-  1. 当历史超长时，调用 LLM 总结
-  2. 保存到 `history.jsonl`
-  3. 清空 session.messages 中的旧消息
+### 2.2 [x] 会话压缩（compact）
+- **描述**: 第一轮 compact，session → history.jsonl + summary.jsonl
+- **修改文件**: `session.py`, `context.py`, `__main__.py`, `config.py`
+- **状态**: ✅ 已实现
+  - Session 目录结构：`~/.bananabot/sessions/<session_id>/`
+  - `/compact` 命令：第一轮 compact
+  - `session.compact()`：裁剪消息
+  - `session.append_history()`：追加到 history.jsonl
+  - `session.append_summary()`：追加到 summary.jsonl
+  - Context 加载 summary.jsonl 和 session.jsonl
+  - `/status` 显示会话统计
 
-### 2.3 [ ] 长期记忆（SOUL/MEMORY）
-- **描述**: 支持 SOUL.md / MEMORY.md 长期记忆
-- **修改文件**: `context.py`, `runner.py`
-- **参考 nanobot**: `agent/context.py` 中 `build_system_prompt()` 加载 SOUL/MEMORY
+### 2.3 [x] 长期记忆（MEMORY/BANANA）
+- **描述**: 支持 MEMORY.md 长期记忆和 BANANA.md 指令
+- **修改文件**: `memory.py`, `context.py`, `__main__.py`
+- **状态**: ✅ 已实现
+  - `MemoryStore` 类：项目隔离记忆存储
+  - `BANANA.md` 支持：全局 + 项目级
+  - `/banana` 命令：查看全局/项目指令
+
+### 2.4 [ ] 第二轮 compact（summary → MEMORY.md）
+- **描述**: summary.jsonl 超过阈值时，二次 compact 生成 MEMORY.md
+- **修改文件**: `session.py`, `context.py`
 - **实现思路**:
-  1. `context.py` 加载 `~/.nanobot/workspace/SOUL.md`
-  2. 拼到 system prompt 开头
-  3. 支持更新 MEMORY.md
+  1. 检测 summary.jsonl 累积超过 `context_window * 0.85`
+  2. 调用 LLM 整合 summary → MEMORY.md
+  3. 清空 summary.jsonl
+  4. 触发时机：summary 过长 或 手动 `/compact`
+
+### 2.5 [ ] 自动 compact 触发
+- **描述**: 超过阈值时自动触发第一轮 compact
+- **修改文件**: `runner.py`, `session.py`
+- **实现思路**:
+  1. 在 `chat_once` 或 `runner.run()` 前检测 token
+  2. 超过 `context_window * 0.70` 自动触发 compact
+  3. 保留手动 `/compact` 命令
 
 ---
 

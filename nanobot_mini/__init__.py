@@ -3,6 +3,7 @@
 from .llm import LLM
 from .tools import Tool, ToolRegistry, ExecTool
 from .context import ContextBuilder
+from .memory import MemoryStore
 from .session import Session, SessionManager
 from .runner import AgentRunner
 from .config import Config
@@ -14,6 +15,7 @@ __all__ = [
     "ToolRegistry",
     "ExecTool",
     "ContextBuilder",
+    "MemoryStore",
     "Session",
     "SessionManager",
     "AgentRunner",
