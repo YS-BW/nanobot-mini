@@ -2,9 +2,8 @@
 
 from .llm import LLM
 from .tools import Tool, ToolRegistry, ExecTool
-from .context import ContextBuilder
 from .memory import MemoryStore
-from .session import Session, SessionManager
+from .session import Session, SessionManager, CompactService
 from .runner import AgentRunner
 from .config import Config
 from .types import LLMResponse, ToolCall
@@ -14,10 +13,10 @@ __all__ = [
     "Tool",
     "ToolRegistry",
     "ExecTool",
-    "ContextBuilder",
     "MemoryStore",
     "Session",
     "SessionManager",
+    "CompactService",
     "AgentRunner",
     "Config",
     "LLMResponse",

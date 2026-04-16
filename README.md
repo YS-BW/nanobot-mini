@@ -50,25 +50,31 @@ uv sync
 
 ## 🚀 快速开始
 
-### 配置
+### 1. 配置
 
-创建 `.env` 文件：
+复制 `.env.example` 为 `.env`，填入你的 API key：
 
 ```bash
-BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-API_KEY=your-api-key
-LLM=qwen-plus
+cp .env.example .env
 ```
 
-### 运行
+### 2. 运行
 
 ```bash
+# 交互模式（推荐）
+uv run nanobot-mini
+
 # 单次对话
 uv run nanobot-mini "帮我执行 ls -la"
-
-# 交互模式
-uv run nanobot-mini
 ```
+
+交互模式下可用命令：
+- `/new` - 新会话
+- `/session <name>` - 切换会话
+- `/clear` - 清空当前会话
+- `/sessions` - 列出所有会话
+- `/compact` - 压缩当前会话
+- `/help` - 查看帮助
 
 ## ⚙️ 配置
 
