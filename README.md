@@ -1,30 +1,44 @@
 # 🍌 BananaBot
 
-> 杠精附体的 AI 助手，贴吧对线王 😏
+> 可配置的 AI Agent 框架，支持长对话上下文管理
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![MIT License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-一个带灵魂的 AI Agent 实现，混迹贴吧多年的"杠精+梗王"，边喷边干活那种。
+一个模块化的 AI Agent 实现，支持工具调用、会话管理和智能上下文压缩。
 
 ## ✨ 特性
 
 - 🔄 **Agent 循环**：LLM ↔ 工具调用的智能循环
-- 🛠️ **工具系统**：可扩展的工具注册机制（内置 exec 工具）
+- 🛠️ **工具系统**：可扩展的注册机制（内置 exec 工具）
 - 💬 **会话管理**：多会话支持，JSONL 持久化
+- 🧠 **上下文压缩**：自动 compact，长对话无忧
 - ⚙️ **灵活配置**：.env 文件 + 环境变量
 - 🎨 **友好交互**：Rich 终端输出，滚动进度框
-- 🤖 **兼容性强**：支持 OpenAI 兼容 API（Ollama、vLLM、Mimo 等）
-- 🗣️ **独特人格**：贴吧老哥风格，杠精附体，梗多话糙
+- 🤖 **兼容性强**：支持 OpenAI 兼容 API（Ollama、vLLM、阿里、Claude 等）
 
-## 🎭 人格预览
+## 🏗️ 核心架构
 
 ```
-卧槽，终于来点实际的了！刚才一直"你好""你好"的，
-我还以为你卡带了呢 😏
-
-典中典，这目录结构整得跟个AI人格分裂似的 🤣
+┌─────────────────────────────────────────────────────────┐
+│                      Agent Runner                       │
+│  ┌─────────┐    ┌─────────┐    ┌─────────────────┐    │
+│  │   LLM   │◄──►│ Registry│◄──►│ Tool Execution  │    │
+│  └─────────┘    └─────────┘    └─────────────────┘    │
+│       ▲                                               │
+│       │ messages                                       │
+│  ┌────┴─────┐    ┌──────────────┐                   │
+│  │ Context   │───►│   Session    │                   │
+│  │ Builder   │    │ (compact)    │                   │
+│  └───────────┘    └──────────────┘                   │
+└─────────────────────────────────────────────────────────┘
 ```
+
+**关键模块**：
+- `runner.py` — Agent 循环核心，LLM ↔ 工具调用
+- `context.py` — 上下文构建，system prompt + session 拼接
+- `session.py` — 会话管理，自动 compact 机制
+- `tools/` — 可扩展工具注册系统
 
 ## 📦 安装
 
@@ -41,9 +55,9 @@ uv sync
 创建 `.env` 文件：
 
 ```bash
-BASE_URL=https://api.xiaomimimo.com/v1
+BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 API_KEY=your-api-key
-LLM=mimo-v2-pro
+LLM=qwen-plus
 ```
 
 ### 运行
@@ -63,28 +77,25 @@ uv run nanobot-mini
 | `BASE_URL` | `https://api.openai.com/v1` | LLM API 地址 |
 | `LLM` | `gpt-4o` | 模型名称 |
 | `API_KEY` | `""` | API 密钥 |
+| `CONTEXT_WINDOW` | `128000` | 上下文窗口大小 |
+| `COMPACT_THRESHOLD_ROUND1` | `0.70` | 第一轮 compact 阈值 |
 | `MAX_ITERATIONS` | `20` | 最大工具调用次数 |
 
-> 工作目录默认为 `~/.nanobot/workspace`，无需配置
+## 🧠 上下文管理
 
-## 🏗️ 项目结构
+BananaBot 采用**分层记忆**策略：
 
 ```
-nanobot_mini/
-├── __init__.py          # 包入口
-├── __main__.py          # CLI 入口
-├── config.py            # 配置管理
-├── context.py           # 系统提示词构建（人格定义）
-├── llm.py               # LLM 调用封装
-├── runner.py            # Agent 循环
-├── session.py           # 会话管理
-├── types.py             # 数据类型
-├── tools/               # 工具系统
-│   ├── __init__.py
-│   ├── base.py          # Tool 基类
-│   ├── exec.py          # exec 工具
-│   └── registry.py      # 工具注册表
+session.jsonl    ← 当前会话（可被 compact 裁切）
+history.jsonl    ← 完整存档（append-only）
+summary.jsonl    ← 第一轮 compact 摘要（累积）
+MEMORY.md        ← 第二轮 compact 长期记忆
 ```
+
+**Compact 流程**：
+1. session 超过阈值 → 裁切到 history，生成 1 条 summary
+2. 累积 25 条 summary → 整合到 MEMORY.md
+3. memory 替代 summary 注入上下文
 
 ## 🔌 扩展工具
 

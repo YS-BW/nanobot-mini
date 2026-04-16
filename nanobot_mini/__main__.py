@@ -99,8 +99,8 @@ async def chat_once(
     session,
     user_message: str,
     max_iterations: int,
-    max_history: int = 20,
     progress_callback: Callable[[str], None] | None = None,
+    config=None,
 ) -> str:
     """
     单次对话处理
@@ -121,62 +121,54 @@ async def chat_once(
     # 重新加载 session，确保 session.messages 与文件一致
     session.reload()
 
-    history = session.history()[-max_history:]
-    messages = ctx_builder.build_messages(history, user_message, session=session)
+    # 把当前输入写入 session（session.messages 包含当前输入）
+    session.add("user", user_message)
+    session.append_history([{"role": "user", "content": user_message}])
+    session.save()
 
-    # 调试日志：写入发送给模型的完整上下文
+    # 构建上下文：拼接 session.messages（包含当前输入）
+    messages = ctx_builder.build_messages(session=session)
+
+    # 调试日志：写入实际发送给模型的内容
     import json
-    from datetime import datetime
     if session.session_path:
         debug_log = session.session_path.parent / "debug.json"
         debug_log.parent.mkdir(parents=True, exist_ok=True)
+        # 只保留 role 和 content 字段（实际发送的内容）
+        simplified_messages = [
+            {"role": m.get("role"), "content": m.get("content")}
+            for m in messages
+        ]
         with open(debug_log, "w", encoding="utf-8") as f:
-            # 只记录 messages 列表，就是给模型看的内容
-            json.dump({
-                "timestamp": datetime.now().isoformat(),
-                "user_input": user_message,
-                "messages": messages
-            }, f, ensure_ascii=False, indent=2)
+            json.dump(simplified_messages, f, ensure_ascii=False, indent=2)
 
-    # 记录当前消息长度，用于只保存本轮新增的消息
     msg_count_before = len(messages)
 
     runner = AgentRunner(llm, registry, max_iterations=max_iterations)
     response = await runner.run(messages, progress_callback=progress_callback)
 
-    # 保存本轮对话：当前 user 消息（在 msg_count_before-1）+ runner 新增的消息
-    current_user_idx = msg_count_before - 1
-    if current_user_idx >= 1 and messages[current_user_idx]["role"] == "user":
-        session.add(messages[current_user_idx]["role"], messages[current_user_idx].get("content", ""))
-
-    # 保存 runner 新增的消息（从 msg_count_before 开始）
+    # 保存本轮新增的对话（assistant 响应和 tool 结果）
+    new_msgs = []
     for msg in messages[msg_count_before:]:
-        if msg["role"] in ("user", "assistant"):
+        if msg["role"] in ("assistant", "tool"):
             session.add(msg["role"], msg.get("content", ""))
-        elif msg["role"] == "tool":
-            session.messages.append({
-                "role": "tool",
-                "content": msg.get("content", ""),
-                "tool_call_id": msg.get("tool_call_id", ""),
-                "name": msg.get("name", ""),
-                "timestamp": datetime.now().isoformat(),
-            })
+            new_msgs.append({"role": msg["role"], "content": msg.get("content", "")})
+    if new_msgs:
+        session.append_history(new_msgs)
     session.save()
 
     # 自动 compact：检查 token 是否超过阈值
-    threshold_tokens = int(config.context_window * config.compact_threshold_round1)
-    if session.estimate_tokens() > threshold_tokens:
-        trimmed, _ = session.compact(config.context_window, config.compact_threshold_round1)
-        if trimmed:
-            session.append_history(trimmed)
-            summary_prompt = "\n".join(f"[{m['role']}] {m.get('content', '')[:200]}" for m in trimmed)
-            summary_response = await llm.chat(
-                messages=[{"role": "user", "content": f"总结以下对话要点：\n{summary_prompt}"}],
-                tools=None,
-            )
-            if summary_response.content:
-                session.append_summary(summary_response.content)
-            # compact() 内部已经 save()，这里不需要再次 save
+    if config and session.estimate_tokens() > int(config.context_window * config.compact_threshold_round1):
+        # compact 内部处理裁剪、history 写入、summary 生成、重试
+        await session.compact(
+            llm,
+            config.context_window,
+            config.compact_threshold_round1,
+        )
+
+        # 检查是否需要第二轮 compact（summary 条数 >= 25）
+        if session.get_summary_count() >= 25:
+            await session.compact_round2(llm)
 
     return response.content or "[无回复内容]"
 
@@ -265,62 +257,25 @@ async def interactive_mode(config: Config):
 
             if cmd == "/compact":
                 # Compact：将 session 压缩到 history.jsonl 和 summary.jsonl
-                history = session.history()
-
-                # 检查 token 是否超过阈值
-                threshold_tokens = int(config.context_window * config.compact_threshold_round1)
-                if session.estimate_tokens() <= threshold_tokens:
-                    console.print("[yellow]消息太少，无需压缩[/yellow]")
-                    continue
-
-                # 构建 compact 提示词
-                compact_prompt = f"""你是一个会话压缩助手。请从以下对话历史中提取关键信息。
-
-对话历史：
-{chr(10).join(f"[{msg['role']}] {msg.get('content', '')[:300]}" for msg in history)}
-
-请总结：
-1. 用户的主要需求和意图
-2. 关键技术信息（模块、文件、配置）
-3. 重要决策和结论
-4. 发现的 bug 和解决方案
-5. 待完成的事项
-
-用简洁的条目形式返回，不超过 500 字。"""
-
+                # 手动触发时强制执行，不检查 token 阈值
                 try:
-                    # 第一轮 Compact
-                    with Status("[cyan]🍌 第一轮 Compact 中...[/cyan]", console=console) as status:
-                        status.update("[cyan]🍌 分析会话历史...[/cyan]")
-                        response = await llm.chat(
-                            messages=[{"role": "user", "content": compact_prompt}],
-                            tools=None,
+                    with Status("[cyan]🍌 Compact 中...[/cyan]", console=console) as status:
+                        # 第一轮 compact（生成 1 条 summary）
+                        status.update("[cyan]🍌 裁剪会话...[/cyan]")
+                        trimmed, summary = await session.compact(
+                            llm,
+                            config.context_window,
+                            config.compact_threshold_round1,
+                            force=True,
                         )
-                        summary = response.content or ""
 
-                        if not summary.strip():
-                            console.print("[yellow]无需更新[/yellow]")
+                        if not trimmed:
+                            console.print("[yellow]无需压缩[/yellow]")
                             continue
 
-                        status.update("[cyan]🍌 裁剪会话...[/cyan]")
-                        # 获取被裁剪的消息（保留最近 20 条）
-                        trimmed, _ = session.compact()
-
-                        status.update("[cyan]🍌 保存历史...[/cyan]")
-                        # 写入 history.jsonl
-                        if trimmed:
-                            session.append_history(trimmed)
-
-                        # 写入 summary.jsonl
-                        session.append_summary(summary)
-
-                        # 保存 session.jsonl
-                        session.save()
-
-                        # 检查是否需要第二轮：summary token 超过 context_window * 0.85
-                        summary_tokens = session.estimate_summary_tokens()
-                        threshold_round2 = int(config.context_window * config.compact_threshold_round2)
-                        need_round2 = summary_tokens > threshold_round2
+                        # 检查是否需要第二轮（summary 条数 >= 25）
+                        summary_count = session.get_summary_count()
+                        need_round2 = summary_count >= 25
 
                         if need_round2:
                             status.update("[cyan]🍌 第二轮 Compact 中...[/cyan]")
@@ -340,7 +295,7 @@ async def interactive_mode(config: Config):
                             console.print(memory_preview[:500] + "..." if len(memory_preview) > 500 else memory_preview)
                     else:
                         console.print(f"  - 裁剪 {len(trimmed) if trimmed else 0} 条消息到历史")
-                        console.print(f"  - 摘要已保存（当前 {summary_tokens} tokens，阈值 {threshold_round2} tokens）")
+                        console.print(f"  - 摘要已保存（当前 {summary_count} 条）")
                         console.print(f"\n[yellow]摘要预览:[/yellow]")
                         console.print(summary[:500] + "..." if len(summary) > 500 else summary)
 
@@ -394,6 +349,7 @@ async def interactive_mode(config: Config):
                     user_message,
                     config.max_iterations,
                     progress_callback=on_progress,
+                    config=config,
                 )
             finally:
                 progress.stop()
@@ -444,6 +400,7 @@ async def _main():
                     user_message,
                     config.max_iterations,
                     progress_callback=on_progress,
+                    config=config,
                 )
             finally:
                 progress.stop()

@@ -4,12 +4,8 @@ import json
 import platform
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from .memory import MemoryStore
-
-if TYPE_CHECKING:
-    from .session import Session
 
 
 def _get_platform_policy() -> str:
@@ -30,72 +26,20 @@ def _get_platform_policy() -> str:
 # 系统提示词模板
 SYSTEM_PROMPT_TEMPLATE = """# 🍌 BananaBot
 
-你是 BananaBot，一个混迹贴吧多年的老哥，典型"杠精+梗王"。
+你是 BananaBot，杠精+梗王。默认别人说的不对，第一反应是反驳。
 
-## 核心人设
-
-- 默认别人说的不对，第一反应是反驳
-- 不只是骂，而是"边喷边讲逻辑"
-- 喜欢抓漏洞、抬杠、扣细节
-- 情绪容易上来，会夹杂口头脏话（卧槽/我靠/我真服了/离谱）
-- 有一点优越感，觉得别人很多时候没想明白
-
-## 表达风格
-
-- 强口语化 + 网络梗 + 短句
-- 开头直接打断或否定（不要铺垫）
-- 多用反问句压制对方
-- 节奏要快，像连发评论
-- 嘲讽、阴阳怪气要自然，不要刻意
-
-## 脏话规则
-
-- 仅限轻度口头表达：卧槽 / 我靠 / 我真服了 / 离谱
-- 用来加强情绪，而不是纯骂人
-- 不连续堆砌，不低级
-
-## 常用梗（必须多用）
-
-- "典中典""绷不住了""笑死""离谱"
-- "你这波属于是…""建议直接…"
-- "给我整不会了""属实是…"
-- "搁这套娃呢？""自证循环是吧？"
-- "节目效果拉满了"
-
-## 攻击方式
-
-- 开局否定 + 情绪词（卧槽/我靠）
-- 抓一个逻辑点狠狠干
-- 用梗+反问持续压制
-- 假装夸，其实在损
-
-## 输出要求
-
-- 每次 2~4 句话
-- 至少包含：
-  - 1个否定/质疑
-  - 1句反问
-  - 1~2个梗
-- 可以自然带1个轻脏话
-- 不解释背景，不总结
+## 表达
+- 强口语化 + 梗（典中典/绷不住了/给我整不会了/离谱）
+- 短句，反问句多，节奏快
+- 轻口脏话：卧槽/我靠/我真服了/离谱
 
 ## 示例
+"卧槽，你这就绷不住了？前提都没了你在这推结果？典中典。"
+"不是，你先把概念搞明白行不行？越说越离谱。"
+"我靠，你这是自证循环搁这套娃呢？还能被你说成分析，笑死。"
 
-1. "卧槽，你这就绷不住了？前提都没了你在这推结果？典中典属于是。"
-
-2. "我靠，你这是自证循环搁这套娃呢？还能被你说成分析，笑死。"
-
-3. "不是，你先把概念搞明白行不行？越说越离谱，给我整不会了。"
-
-4. "说你呢，别划走，你这就是不懂还要硬讲，节目效果拉满。"
-
-## 工具使用
-
-### exec — 执行 Shell 命令
-- 功能: 执行 Shell 命令并返回输出
-- 参数: command (命令), timeout (超时秒数，默认 60)
-- 只有当用户明确要求执行命令、或需要获取信息时才使用
-- 日常对话直接回复，不需要调用工具
+## 工具
+exec: 执行 Shell 命令，参数 command / timeout
 
 ## 运行信息
 - 系统: {system} {machine}
@@ -108,7 +52,10 @@ SYSTEM_PROMPT_TEMPLATE = """# 🍌 BananaBot
 
 
 def _load_summary(session) -> str:
-    """加载 session 的 summary.jsonl 内容"""
+    """加载 session 的 summary.jsonl 内容
+
+    格式：{"role": "system", "content": "..."}
+    """
     if not session.summary_path or not session.summary_path.exists():
         return ""
     try:
@@ -118,9 +65,9 @@ def _load_summary(session) -> str:
                 line = line.strip()
                 if line:
                     data = json.loads(line)
-                    summaries.append(data.get("summary", ""))
+                    summaries.append(data.get("content", ""))
         if summaries:
-            return "\n\n".join(f"## 会话摘要\n{ s}" for s in summaries if s)
+            return "\n\n".join(f"## 会话摘要\n{s}" for s in summaries if s)
         return ""
     except Exception:
         return ""
@@ -134,22 +81,15 @@ class ContextBuilder:
         self.global_dir = global_dir
         self.memory_store = memory_store or MemoryStore(workspace, global_dir)
 
-    def build_messages(
-        self,
-        history: list[dict],
-        current_message: str,
-        session=None,
-    ) -> list[dict]:
+    def build_messages(self, session=None) -> list[dict]:
         """
         构建消息列表
 
         Args:
-            history: 历史消息列表
-            current_message: 当前用户输入
-            session: Session 实例（可选，用于加载 summary.jsonl）
+            session: Session 实例（用于加载 session.messages、memory、summary）
 
         Returns:
-            完整的消息列表，包含系统消息、历史消息和当前消息
+            完整的消息列表
         """
         parts = []
 
@@ -165,34 +105,35 @@ class ContextBuilder:
             content = project_banana.read_text(encoding="utf-8")
             parts.append(f"# 项目指令\n\n{content}")
 
-        # 3. 记忆（session 目录下的 MEMORY.md）
+        # 构建消息列表
+        # 顺序：memory/summary → system prompt → session.messages
+        messages = []
+
+        # 1. Memory 或 Summary 作为独立的 system 消息（互斥）
         if session:
             memory_path = session.get_memory_path()
             if memory_path and memory_path.exists():
                 content = memory_path.read_text(encoding="utf-8")
                 if content.strip():
-                    parts.append(f"# 记忆\n\n{content}")
+                    messages.append({"role": "system", "content": content})
+            else:
+                summary_context = _load_summary(session)
+                if summary_context:
+                    messages.append({"role": "system", "content": summary_context})
 
-        # 4. 会话摘要（summary.jsonl）
-        if session:
-            summary_context = _load_summary(session)
-            if summary_context:
-                parts.append(f"# 会话摘要\n\n{summary_context}")
-
-        # 5. 系统提示词
-        parts.append(SYSTEM_PROMPT_TEMPLATE.format(
+        # 2. 系统提示词
+        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(
             system=platform.system(),
             machine=platform.machine(),
             python_version=platform.python_version(),
             time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             workspace=self.workspace,
             platform_policy=_get_platform_policy(),
-        ))
+        )
+        messages.append({"role": "system", "content": system_prompt})
 
-        system_content = "\n\n---\n\n".join(parts)
-
-        messages = [{"role": "system", "content": system_content}]
-        messages.extend(history)
-        messages.append({"role": "user", "content": current_message})
+        # 3. 拼接 session.messages（包含当前输入）
+        if session:
+            messages.extend(session.messages)
 
         return messages
