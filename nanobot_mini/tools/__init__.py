@@ -1,7 +1,4 @@
-"""工具系统
-
-提供工具基类、工具注册表和内置工具
-"""
+"""工具层导出。"""
 
 from .base import Tool
 from .registry import ToolRegistry

@@ -1,28 +1,28 @@
-"""工具注册表"""
+"""工具注册表。"""
 
-from . import Tool
+from .base import Tool
 
 
 class ToolRegistry:
-    """工具注册表，管理所有可用工具"""
+    """管理所有已注册工具。"""
 
     def __init__(self):
         self._tools: dict[str, Tool] = {}
 
     def register(self, tool: Tool) -> None:
-        """注册工具"""
+        """注册工具。"""
         self._tools[tool.name] = tool
 
     def get(self, name: str) -> Tool | None:
-        """根据名称获取工具"""
+        """按名称获取工具。"""
         return self._tools.get(name)
 
     def list_tools(self) -> list[str]:
-        """列出所有已注册工具的名称"""
+        """列出所有工具名称。"""
         return list(self._tools.keys())
 
     def get_definitions(self) -> list[dict]:
-        """返回 OpenAI function calling 格式的工具定义列表"""
+        """返回 function calling 所需的工具定义。"""
         return [
             {
                 "type": "function",
@@ -36,16 +36,7 @@ class ToolRegistry:
         ]
 
     async def execute(self, name: str, arguments: dict) -> tuple[str, str]:
-        """
-        执行工具
-
-        Args:
-            name: 工具名称
-            arguments: 工具参数
-
-        Returns:
-            (result, error) 元组，error 为空表示执行成功
-        """
+        """执行工具并返回 `(result, error)`。"""
         tool = self.get(name)
         if not tool:
             return "", f"工具 '{name}' 不存在"

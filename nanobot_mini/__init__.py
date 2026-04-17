@@ -1,24 +1,30 @@
-"""nanobot-mini 入口"""
+"""对外导出的核心对象。"""
 
-from .llm import LLM
-from .tools import Tool, ToolRegistry, ExecTool
-from .memory import MemoryStore
-from .session import Session, SessionManager, CompactService
-from .runner import AgentRunner
-from .config import Config
-from .types import LLMResponse, ToolCall
+from .app import AgentEvent, AppService, ChatRequest, ChatResponse, create_app_service
+from .infra import Config
+from .llm import LLM, LLMClient, LLMResponse, ToolCall
+from .memory import CompactPolicy, CompactService, MemoryStore, Session, SessionManager
+from .runtime import AgentRunner
+from .tools import ExecTool, Tool, ToolRegistry
 
 __all__ = [
-    "LLM",
-    "Tool",
-    "ToolRegistry",
+    "AgentEvent",
+    "AppService",
+    "ChatRequest",
+    "ChatResponse",
+    "CompactPolicy",
+    "CompactService",
+    "Config",
+    "create_app_service",
     "ExecTool",
+    "LLM",
+    "LLMClient",
+    "LLMResponse",
     "MemoryStore",
     "Session",
     "SessionManager",
-    "CompactService",
-    "AgentRunner",
-    "Config",
-    "LLMResponse",
+    "Tool",
     "ToolCall",
+    "ToolRegistry",
+    "AgentRunner",
 ]

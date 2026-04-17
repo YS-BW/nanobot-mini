@@ -1,10 +1,10 @@
-"""工具基类"""
+"""工具基类定义。"""
 
 from abc import ABC, abstractmethod
 
 
 class Tool(ABC):
-    """工具基类，所有工具必须继承此类"""
+    """所有工具的统一基类。"""
 
     @property
     @abstractmethod

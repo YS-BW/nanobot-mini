@@ -1,12 +1,12 @@
-"""Shell 执行工具"""
+"""Shell 执行工具。"""
 
 import asyncio
 
-from . import Tool
+from .base import Tool
 
 
 class ExecTool(Tool):
-    """执行 Shell 命令的工具"""
+    """执行 Shell 命令并返回结果。"""
 
     name = "exec"
     description = "执行一条 Shell 命令并返回输出结果"
@@ -31,7 +31,7 @@ class ExecTool(Tool):
         self.working_dir = working_dir
 
     async def execute(self, command: str, timeout: int = 60, **_) -> str:
-        """执行 Shell 命令"""
+        """执行 Shell 命令。"""
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
