@@ -3,9 +3,9 @@ requires = ["hatchling>=1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "nanobot-mini"
+name = "bananabot"
 version = "0.1.0"
-description = "nanobot 最小复刻版"
+description = "bananabot AI 助手"
 requires-python = ">=3.11"
 dependencies = [
     "httpx>=0.25.0",
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-nanobot-mini = "nanobot_mini.__main__:main"
+bananabot = "bananabot.__main__:main"
 
 [tool.uv]
 package = true

@@ -1,4 +1,4 @@
-# nanobot-mini TODO
+# bananabot TODO
 
 > 当前只保留有效执行清单，不再保留旧路线图和历史优先级列表。
 
@@ -14,7 +14,7 @@
 ### P0
 
 - [x] `tools`
-  - 清理 `nanobot_mini/tools.py` 与 `nanobot_mini/tools/` 冲突
+  - 清理 `bananabot/tools.py` 与 `bananabot/tools/` 冲突
   - 固定 `tools/` 为唯一工具入口
 
 - [x] `app`

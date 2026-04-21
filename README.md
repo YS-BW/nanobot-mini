@@ -1,4 +1,4 @@
-# 🍌 nanobot-mini
+# 🍌 bananabot
 
 一个轻量但完整的 AI Assistant / Agent CLI 项目。  
 当前以终端形态运行，已经具备 `LLM ↔ 工具调用 ↔ 会话持久化 ↔ compact ↔ 长期记忆` 的完整闭环，并完成了第一阶段结构重构。
@@ -9,7 +9,7 @@
 
 ## ✨ 项目概览
 
-`nanobot-mini` 当前已经具备这些核心能力：
+`bananabot` 当前已经具备这些核心能力：
 
 - 💬 多轮对话与多会话管理
 - 🧠 上下文构建、会话压缩、长期记忆整合
@@ -51,7 +51,7 @@
 ## 🧱 当前架构
 
 ```text
-nanobot_mini/
+bananabot/
 ├── __main__.py
 ├── app/
 ├── runtime/
@@ -108,7 +108,7 @@ nanobot_mini/
 
 一次完整对话的大致流程：
 
-1. `nanobot_mini/__main__.py` 启动程序
+1. `bananabot/__main__.py` 启动程序
 2. `app/bootstrap.py` 组装 `Config / LLM / ToolRegistry / SessionManager`
 3. `app/service.py` 接收统一 `ChatRequest`
 4. `runtime/context_builder.py` 构建上下文
@@ -144,19 +144,19 @@ LLM=...
 ### 3. 启动交互模式
 
 ```bash
-uv run nanobot-mini
+uv run bananabot
 ```
 
 如果已经做过全局安装，也可以直接：
 
 ```bash
-nanobot-mini
+bananabot
 ```
 
 ### 4. 单次执行
 
 ```bash
-uv run nanobot-mini "帮我分析一下当前目录"
+uv run bananabot "帮我分析一下当前目录"
 ```
 
 ---
@@ -186,9 +186,8 @@ uv run nanobot-mini "帮我分析一下当前目录"
 交互模式支持：
 
 - `/new`：开启新会话
-- `/session <name>`：切换会话
+- `/sessions`：打开内联会话切换列表，回车直接选中
 - `/clear`：清空当前会话窗口
-- `/sessions`：列出所有会话
 - `/status`：查看当前状态
 - `/compact`：强制执行压缩
 - `/banana`：查看全局 / 项目指令文件

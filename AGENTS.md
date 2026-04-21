@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-- 项目名：`nanobot-mini`
+- 项目名：`bananabot`
 - 当前形态：CLI AI 助手原型
 - 目标形态：统一支撑 CLI、桌面端、Web 端的 AI 助手内核
 - 当前阶段：第一阶段结构重构已完成，进入第二阶段前的稳定期
@@ -13,10 +13,10 @@
 
 以下文档是当前唯一有效文档源：
 
-1. [README.md](/Users/lixinlv/nanobot-mini/README.md)
-2. [TODO.md](/Users/lixinlv/nanobot-mini/TODO.md)
-3. [项目结构重构方案.md](/Users/lixinlv/nanobot-mini/docs/项目结构重构方案.md)
-4. [记忆与上下文压缩系统设计.md](/Users/lixinlv/nanobot-mini/docs/记忆与上下文压缩系统设计.md)
+1. [README.md](/Users/lixinlv/bananabot/README.md)
+2. [TODO.md](/Users/lixinlv/bananabot/TODO.md)
+3. [项目结构重构方案.md](/Users/lixinlv/bananabot/docs/项目结构重构方案.md)
+4. [记忆与上下文压缩系统设计.md](/Users/lixinlv/bananabot/docs/记忆与上下文压缩系统设计.md)
 
 除以上文档外，不再保留旧分析文档、重复说明文档、历史临时方案文档。
 
@@ -30,7 +30,7 @@
 
 ## 当前目标结构
 
-当前目标结构以 [项目结构重构方案.md](/Users/lixinlv/nanobot-mini/docs/项目结构重构方案.md) 为准，核心分层固定为：
+当前目标结构以 [项目结构重构方案.md](/Users/lixinlv/bananabot/docs/项目结构重构方案.md) 为准，核心分层固定为：
 
 - `app`
 - `runtime`
@@ -57,7 +57,7 @@
 
 每次结构或核心逻辑变更后，至少验证：
 
-1. `uv run nanobot-mini` 可以启动
+1. `uv run bananabot` 可以启动
 2. 单次对话可以返回 assistant 内容
 3. 工具调用可以正常回写 `tool` 消息
 4. `/status` 正常

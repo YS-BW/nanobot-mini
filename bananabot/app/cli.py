@@ -9,13 +9,16 @@
 
 import asyncio
 import sys
+from dataclasses import dataclass
+from datetime import datetime
 from textwrap import wrap
 
 from rich.console import Console
+from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.widgets import Input, TextArea
+from textual.widgets import Input, ListItem, ListView, Static, TextArea
 
 from .bootstrap import create_app_service
 from .contracts import ChatRequest
@@ -87,6 +90,49 @@ def _render_prefixed_block(prefix: str, text: str) -> str:
     return "\n".join([f"{prefix} {lines[0]}"] + [f"  {line}" for line in lines[1:]])
 
 
+def _picker_line(primary: str, secondary: str, limit: int = 72, gap: int = 2) -> str:
+    """把列表项压成单行双列，便于做紧凑展示。"""
+
+    left = primary.strip()
+    right = secondary.strip()
+    if not right:
+        return _one_line(left, limit=limit)
+
+    raw = f"{left}{' ' * gap}{right}"
+    if len(raw) <= limit:
+        return raw
+
+    max_right = max(12, limit - len(left) - gap)
+    return f"{left}{' ' * gap}{_one_line(right, limit=max_right)}"
+
+
+def _format_bytes(size: int) -> str:
+    """把字节数转成可读体积。"""
+
+    units = ["B", "KB", "MB", "GB"]
+    value = float(size)
+    for unit in units:
+        if value < 1024 or unit == units[-1]:
+            return f"{value:.1f}{unit}" if unit != "B" else f"{int(value)}B"
+        value /= 1024
+    return f"{int(size)}B"
+
+
+def _format_relative_time(timestamp: float) -> str:
+    """把时间戳转成简短相对时间。"""
+
+    delta = max(0, int(datetime.now().timestamp() - timestamp))
+    if delta < 60:
+        return "just now"
+    if delta < 3600:
+        return f"{delta // 60} min ago"
+    if delta < 86400:
+        return f"{delta // 3600} hours ago"
+    if delta < 86400 * 7:
+        return f"{delta // 86400} days ago"
+    return f"{delta // (86400 * 7)} weeks ago"
+
+
 def _wrap_for_box(text: str, width: int = 66) -> list[str]:
     """把 thinking 文本按固定宽度切成多行。"""
 
@@ -115,8 +161,50 @@ def _render_thinking_box(
     return "\n".join([top] + body + [bottom])
 
 
+@dataclass
+class SessionEntry:
+    """会话选择器里展示的一条会话摘要。"""
+
+    session_id: str
+    title: str
+    subtitle: str
+    sort_key: float
+
+
+class SessionListItem(ListItem):
+    """会话选择器中的单条可选项。"""
+
+    def __init__(self, entry: SessionEntry):
+        self.entry = entry
+        summary = _picker_line(entry.session_id, entry.title, limit=68)
+        super().__init__(
+            Static(summary, classes="picker-item-text"),
+            classes="picker-item",
+        )
+
+
+@dataclass(frozen=True)
+class CommandEntry:
+    """命令候选列表里的一条命令定义。"""
+
+    command: str
+    description: str
+
+
+class CommandListItem(ListItem):
+    """命令候选列表中的单条可选项。"""
+
+    def __init__(self, entry: CommandEntry):
+        self.entry = entry
+        summary = _picker_line(entry.command, entry.description, limit=68)
+        super().__init__(
+            Static(summary, classes="picker-item-text"),
+            classes="picker-item",
+        )
+
+
 class BananaTUI(App[None]):
-    """BananaBot 的 Textual 终端界面。"""
+    """bananabot 的 Textual 终端界面。"""
 
     CSS = """
     Screen {
@@ -144,21 +232,57 @@ class BananaTUI(App[None]):
     }
 
     #input-shell {
-        height: 4;
-        padding: 0 1;
+        height: auto;
+        padding: 0 1 1 1;
         border-top: solid #202833;
         background: #0b0f14;
     }
 
-    #prompt-mark {
-        width: 3;
-        color: #8fb7ff;
-        padding: 1 0 0 1;
+    #session-picker-inline,
+    #command-picker-inline {
+        display: none;
+        height: auto;
+        max-height: 8;
+        margin: 0;
+        padding: 0 0 0 2;
+        border: none;
+        background: #0b0f14;
+    }
+
+    #session-picker-inline.-open,
+    #command-picker-inline.-open {
+        display: block;
+    }
+
+    #session-picker-search {
+        height: auto;
+        background: #0b0f14;
+        border: none;
+        color: #9aa7b8;
+        padding: 0;
+        margin: 0 0 1 0;
+    }
+
+    #session-picker-list,
+    #command-picker-list {
+        height: auto;
+        max-height: 8;
+        background: #0b0f14;
+        border: none;
+    }
+
+    .picker-item {
+        padding: 0;
+        margin: 0;
+    }
+
+    .picker-item-text {
+        color: #cdd6e3;
     }
 
     #input-bar {
         height: 1;
-        margin-top: 1;
+        margin-top: 0;
         border: none;
         background: #0b0f14;
         color: #f7f9fc;
@@ -184,6 +308,11 @@ class BananaTUI(App[None]):
         self._reasoning_buffer = ""
         self._round_tools: list[str] = []
         self._status_extra: str | None = None
+        self._session_entries: list[SessionEntry] = []
+        self._filtered_session_entries: list[SessionEntry] = []
+        self._command_entries = self._build_command_entries()
+        self._filtered_command_entries: list[CommandEntry] = []
+        self._suppress_command_picker_refresh = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="paper-shell"):
@@ -195,7 +324,12 @@ class BananaTUI(App[None]):
                 id="paper-view",
             )
         with Vertical(id="input-shell"):
-            yield Input(placeholder="❯ 给 BananaBot 发消息，或者输入 /help", id="input-bar")
+            yield Input(placeholder="❯ 给 bananabot 发消息，或者输入 /help", id="input-bar")
+            with Vertical(id="session-picker-inline"):
+                yield Input(placeholder="⌕ Search sessions…", id="session-picker-search")
+                yield ListView(id="session-picker-list")
+            with Vertical(id="command-picker-inline"):
+                yield ListView(id="command-picker-list")
 
     @property
     def main_view(self) -> TextArea:
@@ -205,10 +339,30 @@ class BananaTUI(App[None]):
     def input_bar(self) -> Input:
         return self.query_one("#input-bar", Input)
 
+    @property
+    def command_picker(self) -> Vertical:
+        return self.query_one("#command-picker-inline", Vertical)
+
+    @property
+    def command_picker_list(self) -> ListView:
+        return self.query_one("#command-picker-list", ListView)
+
+    @property
+    def session_picker(self) -> Vertical:
+        return self.query_one("#session-picker-inline", Vertical)
+
+    @property
+    def session_picker_search(self) -> Input:
+        return self.query_one("#session-picker-search", Input)
+
+    @property
+    def session_picker_list(self) -> ListView:
+        return self.query_one("#session-picker-list", ListView)
+
     def on_mount(self) -> None:
         """初始化界面状态。"""
 
-        self.title = "BananaBot TUI"
+        self.title = "bananabot TUI"
         self.sub_title = self.session.key
         self._rebuild_body_from_session()
         self._append_info_block("ready")
@@ -219,6 +373,12 @@ class BananaTUI(App[None]):
     def action_focus_input(self) -> None:
         """把焦点切回输入框。"""
 
+        if self.session_picker.has_class("-open"):
+            self._hide_session_picker()
+            return
+        if self.command_picker.has_class("-open"):
+            self._hide_command_picker()
+            return
         self.input_bar.focus()
 
     def action_clear_process(self) -> None:
@@ -254,6 +414,53 @@ class BananaTUI(App[None]):
             return "- No recent activity"
         return "\n".join(lines)
 
+    def _build_session_entries(self) -> list[SessionEntry]:
+        """构建 /sessions 使用的会话摘要列表。"""
+
+        entries: list[SessionEntry] = []
+        for session_id in self.service.list_sessions():
+            session = self.service.get_session(session_id)
+            session.reload()
+
+            title = session_id
+            for message in reversed(session.messages):
+                content = (message.get("content") or "").strip()
+                if content:
+                    title = _one_line(content, limit=42)
+                    if message["role"] == "user":
+                        break
+
+            session_dir = self.service.sessions._get_session_dir(session_id)
+            files = [path for path in session_dir.rglob("*") if path.is_file()] if session_dir.exists() else []
+            total_size = sum(path.stat().st_size for path in files)
+            latest_mtime = max((path.stat().st_mtime for path in files), default=session_dir.stat().st_mtime if session_dir.exists() else 0.0)
+            subtitle = f"{_format_relative_time(latest_mtime)} · {session_id} · {_format_bytes(total_size)}"
+            entries.append(
+                SessionEntry(
+                    session_id=session_id,
+                    title=title,
+                    subtitle=subtitle,
+                    sort_key=latest_mtime,
+                )
+            )
+
+        return sorted(entries, key=lambda entry: entry.sort_key, reverse=True)
+
+    @staticmethod
+    def _build_command_entries() -> list[CommandEntry]:
+        """构建输入 `/` 时展示的命令候选列表。"""
+
+        return [
+            CommandEntry("/help", "显示帮助"),
+            CommandEntry("/new", "开启新会话"),
+            CommandEntry("/sessions", "打开会话切换列表"),
+            CommandEntry("/status", "显示当前状态"),
+            CommandEntry("/compact", "压缩当前会话"),
+            CommandEntry("/banana", "查看全局 / 项目指令"),
+            CommandEntry("/clear", "清空当前会话窗口"),
+            CommandEntry("/exit", "退出程序"),
+        ]
+
     def _build_welcome_block(self) -> str:
         """生成纸面顶部的欢迎区。"""
 
@@ -263,7 +470,7 @@ class BananaTUI(App[None]):
         ctx_percent = min(100, int(self.session.estimate_tokens() / ctx_window * 100))
 
         lines = [
-            "BananaBot Code",
+            "bananabot",
             "",
             "Welcome back!",
             "",
@@ -299,6 +506,166 @@ class BananaTUI(App[None]):
         self.main_view.move_cursor(self.main_view.document.end)
         self.call_after_refresh(lambda: self.main_view.scroll_end(animate=False))
         self.sub_title = self.session.key
+
+    def _show_session_picker(self) -> None:
+        """在输入区上方展开会话切换列表。"""
+
+        self._hide_command_picker()
+        entries = self._build_session_entries()
+        if not entries:
+            self._append_info_block("当前没有可恢复的会话")
+            return
+
+        self._session_entries = entries
+        self.session_picker.add_class("-open")
+        self.session_picker_search.value = ""
+        self._refresh_session_picker("")
+        self.call_after_refresh(self.session_picker_search.focus)
+
+    def _hide_session_picker(self) -> None:
+        """收起会话切换列表，并把焦点还给主输入框。"""
+
+        self.session_picker.remove_class("-open")
+        self.session_picker_search.value = ""
+        self._session_entries = []
+        self._filtered_session_entries = []
+        self.session_picker_list.clear()
+        self.call_after_refresh(self.input_bar.focus)
+
+    def _refresh_session_picker(self, query: str) -> None:
+        """按搜索词刷新内联会话候选列表。"""
+
+        normalized = query.strip().lower()
+        if not normalized:
+            self._filtered_session_entries = self._session_entries
+        else:
+            self._filtered_session_entries = [
+                entry
+                for entry in self._session_entries
+                if normalized in entry.session_id.lower() or normalized in entry.title.lower()
+            ]
+
+        self.session_picker_list.clear()
+        for entry in self._filtered_session_entries:
+            self.session_picker_list.append(SessionListItem(entry))
+        self.session_picker_list.index = 0 if self._filtered_session_entries else None
+
+    def _show_command_picker(self) -> None:
+        """展开 `/` 命令候选列表。"""
+
+        if self.session_picker.has_class("-open"):
+            return
+        self.command_picker.add_class("-open")
+
+    def _hide_command_picker(self) -> None:
+        """收起命令候选列表。"""
+
+        self.command_picker.remove_class("-open")
+        self._filtered_command_entries = []
+        self.command_picker_list.clear()
+
+    def _refresh_command_picker(self, query: str) -> None:
+        """根据输入框里的 `/` 前缀过滤命令候选。"""
+
+        normalized = query.strip().lower()
+        if not normalized.startswith("/"):
+            self._hide_command_picker()
+            return
+
+        if normalized == "/":
+            self._filtered_command_entries = self._command_entries
+        else:
+            self._filtered_command_entries = [
+                entry
+                for entry in self._command_entries
+                if entry.command.startswith(normalized) or normalized in entry.description.lower()
+            ]
+
+        if not self._filtered_command_entries:
+            self._hide_command_picker()
+            return
+
+        self._show_command_picker()
+        self.command_picker_list.clear()
+        for entry in self._filtered_command_entries:
+            self.command_picker_list.append(CommandListItem(entry))
+        self.command_picker_list.index = 0
+
+    def _current_command_entry(self) -> CommandEntry | None:
+        """拿到当前高亮的命令候选项。"""
+
+        highlighted = self.command_picker_list.highlighted_child
+        if isinstance(highlighted, CommandListItem):
+            return highlighted.entry
+        if self._filtered_command_entries:
+            return self._filtered_command_entries[0]
+        return None
+
+    def _move_command_picker_selection(self, step: int) -> None:
+        """按方向键移动命令候选高亮项。"""
+
+        if not self._filtered_command_entries:
+            return
+
+        current_index = self.command_picker_list.index
+        if current_index is None:
+            current_index = 0
+
+        next_index = max(0, min(len(self._filtered_command_entries) - 1, current_index + step))
+        self.command_picker_list.index = next_index
+
+    def _apply_command_suggestion(self, command: str) -> None:
+        """把当前命令候选写回输入框。"""
+
+        self._suppress_command_picker_refresh = True
+        self.input_bar.value = command
+        self._hide_command_picker()
+        self.input_bar.focus()
+        self.call_after_refresh(self._finish_command_suggestion_refresh)
+
+    def _finish_command_suggestion_refresh(self) -> None:
+        """在下一轮刷新后解除命令候选刷新抑制。"""
+
+        self._suppress_command_picker_refresh = False
+
+    def _execute_command_suggestion(self, command: str) -> None:
+        """直接执行当前高亮的命令候选。"""
+
+        self.input_bar.value = ""
+        self._hide_command_picker()
+        self.run_worker(self._run_command(command), exclusive=True, group="cli-command")
+
+    def _current_session_entry(self) -> SessionEntry | None:
+        """拿到当前高亮的会话项。"""
+
+        highlighted = self.session_picker_list.highlighted_child
+        if isinstance(highlighted, SessionListItem):
+            return highlighted.entry
+        if self._filtered_session_entries:
+            return self._filtered_session_entries[0]
+        return None
+
+    def _move_session_picker_selection(self, step: int) -> None:
+        """按方向键移动会话列表高亮项。"""
+
+        if not self._filtered_session_entries:
+            return
+
+        current_index = self.session_picker_list.index
+        if current_index is None:
+            current_index = 0
+
+        next_index = max(0, min(len(self._filtered_session_entries) - 1, current_index + step))
+        self.session_picker_list.index = next_index
+
+    def _switch_session(self, session_id: str) -> None:
+        """切换当前会话，并刷新纸面正文。"""
+
+        self.session = self.service.get_session(session_id)
+        self._rebuild_body_from_session()
+        self._append_info_block(f"已切换到会话 {self.session.key}")
+        self._hide_session_picker()
+        self._sync_page()
 
     def _render_persisted_messages(self) -> list[str]:
         """把当前 session 里的 user/assistant 消息渲染成纸面正文。"""
@@ -434,21 +801,91 @@ class BananaTUI(App[None]):
         self.busy = busy
         self._status_extra = extra
         self.input_bar.disabled = busy
+        self.session_picker_search.disabled = busy
         self._sync_page()
         if not busy:
-            self.input_bar.focus()
+            if self.session_picker.has_class("-open"):
+                self.session_picker_search.focus()
+            else:
+                self.input_bar.focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """处理输入框变更；用于实时过滤候选列表。"""
+
+        if event.input.id == "session-picker-search":
+            self._refresh_session_picker(event.value)
+            return
+
+        if event.input.id == "input-bar" and not self.busy:
+            if self._suppress_command_picker_refresh:
+                return
+            self._refresh_command_picker(event.value)
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """鼠标或回车选择内联候选项。"""
+
+        if event.list_view.id == "session-picker-list" and isinstance(event.item, SessionListItem):
+            self._switch_session(event.item.entry.session_id)
+            return
+
+        if event.list_view.id == "command-picker-list" and isinstance(event.item, CommandListItem):
+            self._execute_command_suggestion(event.item.entry.command)
+
+    def on_key(self, event: events.Key) -> None:
+        """处理候选列表打开时的全局按键。"""
+
+        if self.command_picker.has_class("-open"):
+            if event.key == "up":
+                self._move_command_picker_selection(-1)
+                event.stop()
+                return
+
+            if event.key == "down":
+                self._move_command_picker_selection(1)
+                event.stop()
+                return
+
+        if not self.session_picker.has_class("-open"):
+            return
+
+        if event.key == "up":
+            self._move_session_picker_selection(-1)
+            event.stop()
+            return
+
+        if event.key == "down":
+            self._move_session_picker_selection(1)
+            event.stop()
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         """处理输入提交。"""
 
+        if event.input.id == "session-picker-search":
+            selected = self._current_session_entry()
+            if selected is None:
+                self._append_info_block("没有匹配的会话")
+                self._hide_session_picker()
+                self._sync_page()
+                return
+            self._switch_session(selected.session_id)
+            return
+
         text = event.value.strip()
-        self.input_bar.value = ""
         if not text:
             return
 
         if self.busy:
             self._append_info_block("当前还有任务在跑")
             return
+
+        if event.input.id == "input-bar" and self.command_picker.has_class("-open"):
+            selected_command = self._current_command_entry()
+            if selected_command is not None:
+                self._execute_command_suggestion(selected_command.command)
+                return
+
+        self.input_bar.value = ""
+        self._hide_command_picker()
 
         if text.startswith("/"):
             self.run_worker(self._run_command(text), exclusive=True, group="cli-command")
@@ -469,9 +906,8 @@ class BananaTUI(App[None]):
                     [
                         "可用命令:",
                         "  /new              开启新会话",
-                        "  /session <name>   切换到指定会话",
+                        "  /sessions         打开会话切换列表",
                         "  /clear            清空当前会话窗口",
-                        "  /sessions         列出所有会话",
                         "  /status           显示当前状态",
                         "  /compact          压缩当前会话",
                         "  /banana           查看全局/项目指令",
@@ -493,15 +929,8 @@ class BananaTUI(App[None]):
             self._sync_page()
             return
 
-        if lower.startswith("/session "):
-            target = command[9:].strip()
-            if not target:
-                self._append_info_block("请指定会话名称，例如 /session mychat")
-                return
-            self.session = self.service.get_session(target)
-            self._rebuild_body_from_session()
-            self._append_info_block(f"已切换到会话 {self.session.key}")
-            self._sync_page()
+        if lower == "/sessions":
+            self._show_session_picker()
             return
 
         if lower == "/clear":
@@ -509,13 +938,6 @@ class BananaTUI(App[None]):
             self._rebuild_body_from_session()
             self._append_info_block(f"已清空会话 {self.session.key} 的当前窗口")
             self._sync_page()
-            return
-
-        if lower == "/sessions":
-            session_ids = self.service.list_sessions()
-            self._append_info_block(
-                "\n".join([f"当前共有 {len(session_ids)} 个会话:"] + [f"  - {sid}" for sid in session_ids])
-            )
             return
 
         if lower == "/status":
@@ -609,11 +1031,11 @@ async def run_once(user_message: str) -> None:
             delta = (event.data or {}).get("delta") or event.message or ""
             if delta:
                 if not printed:
-                    console.print("banana", style="cyan", end="\n")
+                    console.print("bananabot", style="cyan", end="\n")
                     printed = True
                 console.print(delta, end="", soft_wrap=True)
         elif event.type == "assistant_message" and not printed:
-            console.print("banana", style="cyan")
+            console.print("bananabot", style="cyan")
             console.print(event.message or "[无回复内容]", end="")
             printed = True
         elif event.type == "error":

@@ -5,14 +5,15 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from textual.widgets import TextArea
+from textual.containers import Vertical
+from textual.widgets import Input, TextArea
 
-from nanobot_mini.app import AppService, ChatRequest
-from nanobot_mini.app.cli import BananaTUI
-from nanobot_mini.llm import LLMResponse, LLMStreamChunk, ToolCall, ToolCallDelta
-from nanobot_mini.memory import CompactService, SessionManager
-from nanobot_mini.runtime import build_context
-from nanobot_mini.tools import ExecTool, ToolRegistry
+from bananabot.app import AppService, ChatRequest
+from bananabot.app.cli import BananaTUI, CommandListItem
+from bananabot.llm import LLMResponse, LLMStreamChunk, ToolCall, ToolCallDelta
+from bananabot.memory import CompactService, SessionManager
+from bananabot.runtime import build_context
+from bananabot.tools import ExecTool, ToolRegistry
 
 
 class DummyConfig:
@@ -239,10 +240,163 @@ class Stage1RefactorTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("❯ /help", main_text)
         self.assertIn("可用命令:", main_text)
+        self.assertIn("/sessions", main_text)
+        self.assertNotIn("/resume", main_text)
+        self.assertNotIn("/session <name>", main_text)
         self.assertIn("Thinked", main_text)
         self.assertIn("⏺ 你好，我在。", main_text)
         self.assertIn("Tips for getting started", main_text)
         self.assertIn("Context", main_text)
+
+    async def test_sessions_command_opens_inline_picker_and_switches_session(self):
+        service = self.create_service()
+        service.get_session("cli:default").add("user", "默认会话")
+        target = service.get_session("cli:other")
+        target.add("user", "切换目标")
+
+        app = BananaTUI(service)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await app._run_command("/sessions")
+            await pilot.pause()
+
+            picker = app.query_one("#session-picker-inline", Vertical)
+            self.assertTrue(picker.has_class("-open"))
+            self.assertEqual(app.session_picker_list.index, 0)
+
+            app.session_picker_search.value = "other"
+            app._refresh_session_picker("other")
+            await pilot.pause()
+            await app.on_input_submitted(Input.Submitted(app.session_picker_search, app.session_picker_search.value))
+            await pilot.pause()
+
+        self.assertEqual(app.session.key, "cli:other")
+        self.assertFalse(picker.has_class("-open"))
+
+    async def test_session_picker_enter_without_match_reports_and_closes(self):
+        service = self.create_service()
+        session = service.get_session("cli:default")
+        session.add("user", "默认会话")
+
+        app = BananaTUI(service)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await app._run_command("/sessions")
+            await pilot.pause()
+
+            app.session_picker_search.value = "not-found"
+            app._refresh_session_picker("not-found")
+            await pilot.pause()
+            await app.on_input_submitted(Input.Submitted(app.session_picker_search, app.session_picker_search.value))
+            await pilot.pause()
+
+            main_text = self.text_area_text(app.main_view)
+            picker_open = app.session_picker.has_class("-open")
+
+        self.assertIn("没有匹配的会话", main_text)
+        self.assertFalse(picker_open)
+
+    async def test_session_picker_supports_arrow_navigation_and_escape(self):
+        service = self.create_service()
+        service.get_session("cli:default").add("user", "默认会话")
+        service.get_session("cli:alpha").add("user", "alpha")
+        service.get_session("cli:beta").add("user", "beta")
+
+        app = BananaTUI(service)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await app._run_command("/sessions")
+            await pilot.pause()
+
+            self.assertTrue(app.session_picker.has_class("-open"))
+            first_entry = app._current_session_entry()
+
+            await pilot.press("down")
+            await pilot.pause()
+            second_entry = app._current_session_entry()
+
+            self.assertIsNotNone(first_entry)
+            self.assertIsNotNone(second_entry)
+            self.assertNotEqual(first_entry.session_id, second_entry.session_id)
+
+            await pilot.press("escape")
+            await pilot.pause()
+
+            self.assertFalse(app.session_picker.has_class("-open"))
+            self.assertIs(app.focused, app.input_bar)
+
+    async def test_slash_input_shows_command_picker(self):
+        service = self.create_service()
+        app = BananaTUI(service)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("/")
+            await pilot.pause()
+
+            picker = app.command_picker
+            picker_text = "\n".join(
+                item.entry.command for item in app.command_picker_list.query(CommandListItem)
+            )
+
+        self.assertTrue(picker.has_class("-open"))
+        self.assertIn("/help", picker_text)
+        self.assertIn("/sessions", picker_text)
+        self.assertIn("/compact", picker_text)
+
+    async def test_command_picker_enter_executes_selected_command(self):
+        service = self.create_service()
+        app = BananaTUI(service)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.input_bar.value = "/sta"
+            app._refresh_command_picker("/sta")
+            await pilot.pause()
+
+            await app.on_input_submitted(Input.Submitted(app.input_bar, app.input_bar.value))
+            await pilot.pause()
+            input_value = app.input_bar.value
+            picker_open = app.command_picker.has_class("-open")
+            main_text = self.text_area_text(app.main_view)
+
+        self.assertEqual(input_value, "")
+        self.assertFalse(picker_open)
+        self.assertIn("当前会话:", main_text)
+
+    async def test_command_picker_supports_arrow_navigation(self):
+        service = self.create_service()
+        app = BananaTUI(service)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            await pilot.press("/")
+            await pilot.pause()
+
+            first_entry = app._current_command_entry()
+            await pilot.press("down")
+            await pilot.pause()
+            second_entry = app._current_command_entry()
+
+        self.assertIsNotNone(first_entry)
+        self.assertIsNotNone(second_entry)
+        self.assertNotEqual(first_entry.command, second_entry.command)
+
+    async def test_session_entries_sort_by_latest_mtime(self):
+        service = self.create_service()
+        older = service.get_session("cli:older")
+        older.add("user", "旧会话")
+        newer = service.get_session("cli:newer")
+        newer.add("user", "新会话")
+
+        app = BananaTUI(service)
+        entries = app._build_session_entries()
+
+        self.assertGreaterEqual(len(entries), 2)
+        self.assertEqual(entries[0].session_id, "cli:newer")
 
     async def test_tui_shows_tool_summary_box_when_tools_called(self):
         service = self.create_service(
@@ -364,7 +518,7 @@ class Stage1RefactorTests(unittest.IsolatedAsyncioTestCase):
         messages = build_context(session=session, workspace=self.root)
 
         self.assertEqual(messages[0]["content"], "这是长期记忆")
-        self.assertIn("BananaBot", messages[1]["content"])
+        self.assertIn("bananabot", messages[1]["content"])
         self.assertEqual(messages[-1]["content"], "最近做了什么")
 
 
