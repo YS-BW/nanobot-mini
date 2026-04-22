@@ -62,7 +62,7 @@ def _get_platform_policy() -> str:
 - 当前运行在 Windows 系统上。
 - 部分 GNU 工具（如 grep、sed、awk）可能不可用。
 - 优先使用 Windows 原生命令或文件工具。"""
-        return """## 平台策略 (POSIX)
+    return """## 平台策略 (POSIX)
 - 当前运行在 POSIX 兼容系统上。
 - 优先使用 UTF-8 编码和标准 Shell 工具。
 - 当文件工具更简单可靠时，优先使用文件工具而非 shell 命令。"""

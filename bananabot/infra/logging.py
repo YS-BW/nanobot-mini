@@ -7,14 +7,13 @@
 import json
 
 
-def write_debug_messages(session, messages: list[dict]) -> None:
+def write_debug_messages(thread_store, messages: list[dict]) -> None:
     """把运行时消息写入调试文件。"""
 
-    if not session.session_path:
+    if not thread_store.session_path:
         return
 
-    debug_log = session.session_path.parent / "debug.json"
+    debug_log = thread_store.session_path.parent / "debug.json"
     debug_log.parent.mkdir(parents=True, exist_ok=True)
-    simplified = [{"role": message.get("role"), "content": message.get("content")} for message in messages]
     with open(debug_log, "w", encoding="utf-8") as handle:
-        json.dump(simplified, handle, ensure_ascii=False, indent=2)
+        json.dump(messages, handle, ensure_ascii=False, indent=2)

@@ -1,147 +1,147 @@
-"""OpenAI 兼容协议的 LLM 客户端。
+"""多 provider LLM 客户端。"""
 
-第一阶段重构后，LLM 层只负责协议通信和结果解析：
- - 组装请求
- - 发 HTTP 请求
- - 解析标准响应
+from __future__ import annotations
 
-它不应该知道 session、tools 存储策略、CLI 展示方式这些上层概念。
-"""
-
-import json
-from collections.abc import AsyncIterator
+import asyncio
 
 import httpx
 
-from .errors import LLMResponseError
-from .types import LLMResponse, LLMStreamChunk, ToolCall, ToolCallDelta
+from .factory import ProviderFactory
+from .registry import ModelRegistry
+from .types import LLMResponse
 
 
 class LLMClient:
-    """最小可用的聊天客户端。"""
+    """统一的多模型调用入口。"""
 
     def __init__(
         self,
-        base_url: str | None = None,
-        api_key: str | None = None,
-        model: str | None = None,
+        *,
+        model_registry: ModelRegistry,
+        provider_factory: ProviderFactory | None = None,
+        default_model: str | None = None,
+        timeout_seconds: float = 120,
+        max_retries: int = 3,
     ):
-        self.base_url = (base_url or "https://api.openai.com/v1").rstrip("/")
-        self.api_key = api_key or ""
-        self.model = model or "gpt-4o"
+        self.model_registry = model_registry
+        self.provider_factory = provider_factory or ProviderFactory()
+        self.timeout_seconds = timeout_seconds
+        self.max_retries = max_retries
+        self.model_alias = default_model or model_registry.default_alias or ""
+        if not self.model_alias:
+            raise ValueError("LLMClient requires at least one configured model")
+        self._sync_current_profile()
+
+    def _sync_current_profile(self) -> None:
+        """同步当前模型快照。"""
+
+        profile = self.get_current_profile()
+        self.base_url = profile.base_url
+        self.api_key = profile.api_key
+        self.model = profile.model
+
+    def get_current_profile(self):
+        """返回当前模型档案。"""
+
+        return self.model_registry.get(self.model_alias)
+
+    def get_model_alias(self) -> str:
+        """返回当前模型 alias。"""
+
+        return self.model_alias
+
+    def set_model(self, alias_or_model: str):
+        """切换当前默认模型。"""
+
+        profile = self.model_registry.get(alias_or_model)
+        self.model_alias = profile.alias
+        self._sync_current_profile()
+        return profile
+
+    def list_models(self):
+        """返回所有可用模型。"""
+
+        return self.model_registry.list_profiles()
+
+    @staticmethod
+    def _should_retry(exc: Exception) -> bool:
+        """判断当前异常是否值得重试。"""
+
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = exc.response.status_code
+            return status in {408, 409, 429, 500, 502, 503, 504, 529}
+        if isinstance(exc, (httpx.ConnectError, httpx.ReadTimeout, httpx.WriteTimeout, httpx.RemoteProtocolError)):
+            return True
+        return False
 
     async def chat(
         self,
         messages: list[dict],
         tools: list[dict] | None = None,
         stream: bool = False,
+        model: str | None = None,
     ) -> LLMResponse:
-        """发送一次非流式聊天请求并解析返回。
+        """执行一次非流式聊天请求。"""
 
-        这里默认走 OpenAI 兼容的 `/chat/completions` 协议。
-        """
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        profile = self.model_registry.get(model or self.model_alias)
+        provider = self.provider_factory.create(profile)
+        headers = provider.build_headers(profile)
+        payload = provider.build_payload(profile, messages=messages, tools=tools, stream=stream)
 
-        payload = {"model": self.model, "messages": messages}
-        if tools:
-            payload["tools"] = tools
-        if stream:
-            payload["stream"] = True
+        async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=True) as client:
+            last_exc: Exception | None = None
+            for attempt in range(self.max_retries):
+                try:
+                    response = await client.post(
+                        f"{profile.base_url.rstrip('/')}{profile.chat_path}",
+                        headers=headers,
+                        params=profile.query_params,
+                        json=payload,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+                    break
+                except Exception as exc:  # pragma: no cover - 网络抖动依赖真实环境
+                    last_exc = exc
+                    if attempt == self.max_retries - 1 or not self._should_retry(exc):
+                        raise
+                    await asyncio.sleep(1 + attempt)
+            else:  # pragma: no cover
+                raise last_exc or RuntimeError("LLM request failed")
 
-        async with httpx.AsyncClient(timeout=120) as client:
-            response = await client.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-            )
-            response.raise_for_status()
-            data = response.json()
-
-        try:
-            choice = data["choices"][0]
-            message = choice["message"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise LLMResponseError("Invalid LLM response payload") from exc
-
-        tool_calls: list[ToolCall] = []
-        for index, tool_call in enumerate(message.get("tool_calls") or []):
-            # 兼容部分提供方不返回 tool_call id 的情况。
-            tool_id = tool_call.get("id") or f"tool_{index}_{tool_call['function']['name']}"
-            tool_calls.append(
-                ToolCall(
-                    id=tool_id,
-                    name=tool_call["function"]["name"],
-                    arguments=json.loads(tool_call["function"]["arguments"]),
-                )
-            )
-
-        return LLMResponse(
-            content=message.get("content"),
-            tool_calls=tool_calls,
-            finish_reason=choice.get("finish_reason", "stop"),
-        )
+        return provider.parse_response(profile, data)
 
     async def chat_stream(
         self,
         messages: list[dict],
         tools: list[dict] | None = None,
-    ) -> AsyncIterator[LLMStreamChunk]:
-        """发送一次流式聊天请求，并解析成结构化增量。
+        model: str | None = None,
+    ):
+        """执行一次流式聊天请求。"""
 
-        这里不再只返回纯文本，而是把文本增量和工具调用增量都保留下来，
-        这样运行时主循环才能真正做到边吐字边收集 tool call。
-        """
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+        profile = self.model_registry.get(model or self.model_alias)
+        provider = self.provider_factory.create(profile)
+        headers = provider.build_headers(profile)
+        payload = provider.build_payload(profile, messages=messages, tools=tools, stream=True)
 
-        payload = {"model": self.model, "messages": messages, "stream": True}
-        if tools:
-            payload["tools"] = tools
-
-        async with httpx.AsyncClient(timeout=120) as client:
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-            ) as response:
-                response.raise_for_status()
-                async for line in response.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    if line == "data: [DONE]":
-                        break
-                    chunk = json.loads(line[6:])
-
-                    try:
-                        choice = chunk["choices"][0]
-                        delta = choice.get("delta") or {}
-                    except (KeyError, IndexError, TypeError) as exc:
-                        raise LLMResponseError("Invalid LLM stream payload") from exc
-
-                    tool_deltas: list[ToolCallDelta] = []
-                    for tool_call in delta.get("tool_calls") or []:
-                        function = tool_call.get("function") or {}
-                        tool_deltas.append(
-                            ToolCallDelta(
-                                index=tool_call.get("index", 0),
-                                id=tool_call.get("id"),
-                                name=function.get("name"),
-                                arguments_chunk=function.get("arguments", ""),
-                            )
-                        )
-
-                    reasoning_content = delta.get("reasoning_content") or ""
-                    content = delta.get("content") or ""
-                    finish_reason = choice.get("finish_reason")
-
-                    if reasoning_content or content or tool_deltas or finish_reason is not None:
-                        yield LLMStreamChunk(
-                            reasoning_content=reasoning_content,
-                            content=content,
-                            tool_calls=tool_deltas,
-                            finish_reason=finish_reason,
-                        )
+        async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=True) as client:
+            last_exc: Exception | None = None
+            for attempt in range(self.max_retries):
+                try:
+                    async with client.stream(
+                        "POST",
+                        f"{profile.base_url.rstrip('/')}{profile.chat_path}",
+                        headers=headers,
+                        params=profile.query_params,
+                        json=payload,
+                    ) as response:
+                        response.raise_for_status()
+                        async for chunk in provider.parse_stream(profile, response):
+                            yield chunk
+                    return
+                except Exception as exc:  # pragma: no cover - 网络抖动依赖真实环境
+                    last_exc = exc
+                    if attempt == self.max_retries - 1 or not self._should_retry(exc):
+                        raise
+                    await asyncio.sleep(1 + attempt)
+            raise last_exc or RuntimeError("LLM stream request failed")

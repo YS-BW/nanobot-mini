@@ -1,0 +1,49 @@
+[meta]
+default_model = "qwen3.6-plus"
+
+[models.qwen3_6_plus]
+alias = "qwen3.6-plus"
+provider = "dashscope"
+model = "qwen3.6-plus"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+api_key_env = "DASHSCOPE_API_KEY"
+description = "Qwen 3.6 Plus"
+reasoning = true
+
+[models.deepseek_chat]
+alias = "deepseek-chat"
+provider = "deepseek"
+model = "deepseek-chat"
+base_url = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+description = "DeepSeek Chat"
+reasoning = false
+
+[models.minimax_m2_7]
+alias = "MiniMax-M2.7"
+provider = "minimax"
+model = "MiniMax-M2.7"
+base_url = "https://api.minimaxi.com/v1"
+api_key_env = "MINIMAX_API_KEY"
+description = "MiniMax M2.7"
+reasoning = true
+extra_body = { reasoning_split = true }
+
+[models.mimo_v2_pro]
+alias = "mimo-v2-pro"
+provider = "mimo"
+model = "mimo-v2-pro"
+base_url = "https://api.xiaomimimo.com/v1"
+api_key_env = "MIMO_API_KEY"
+description = "MiMo V2 Pro"
+reasoning = true
+
+[models.local_gemma]
+alias = "gemma-4-e4b-it-4bit"
+provider = "local"
+model = "gemma-4-e4b-it-4bit"
+base_url = "http://127.0.0.1:8000/v1"
+api_key_env = "LOCAL_OMLX_API_KEY"
+description = "Local Gemma · OMLX"
+reasoning = false
+supports_tools = false

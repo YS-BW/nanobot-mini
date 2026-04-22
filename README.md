@@ -1,125 +1,43 @@
 # 🍌 bananabot
 
-一个轻量但完整的 AI Assistant / Agent CLI 项目。  
-当前以终端形态运行，已经具备 `LLM ↔ 工具调用 ↔ 会话持久化 ↔ compact ↔ 长期记忆` 的完整闭环，并完成了第一阶段结构重构。
+一个面向终端的 AI Agent 项目。
+当前已经完成第一阶段结构收束，主线设计是统一 `thread / task_run / turn / step` 运行时，加上可落盘的消息存储、working memory、compact 和记忆整合。
 
-> 目标不是做一个只能跑 demo 的脚手架，而是做一个后续可以继续扩展到 CLI、桌面端、Web 端的统一 Agent 内核。
+> 现在的目标不是做一个能跑通 demo 的聊天壳子，而是做一个后面能继续接 TUI、桌面端、Web 端的 Agent 内核。
 
----
+## ✨ 当前能力
 
-## ✨ 项目概览
+- 💬 多轮 thread 对话
+- 🌊 正文流式输出
+- 🧠 reasoning 事件流与 thinking 展示
+- 🔧 工具调用循环
+- 💾 thread 消息持久化
+- 🗜️ compact 摘要压缩
+- 📌 project memory + working memory 注入
+- 🧵 结构化运行时状态落盘
+- 🖥️ Textual TUI 交互界面
+- 🔁 模型列表与 `/model` 快速切换
 
-`bananabot` 当前已经具备这些核心能力：
-
-- 💬 多轮对话与多会话管理
-- 🧠 上下文构建、会话压缩、长期记忆整合
-- 🔧 `LLM ↔ Tool` 运行时主循环
-- 🌊 流式输出，支持正文增量和思考过程事件
-- 🖥️ 可交互的 TUI 终端界面
-- 📦 清晰的模块分层：`app / runtime / llm / memory / tools / infra`
-- 🔌 面向未来多端的统一服务接口与统一事件结构
-
-当前阶段的重点已经从“能不能跑”切换到“怎么持续扩展、怎么保持结构稳定”。
-
----
-
-## 🗂️ 项目状态
-
-### ✅ 已完成
-
-- 第一阶段结构重构
-- 统一应用服务接口
-- 统一运行时事件流
-- 会话持久化与历史记录
-- compact 摘要压缩
-- MEMORY 长期记忆整合
-- OpenAI 兼容模型接入
-- TUI 交互界面与流式正文展示
-- 基础回归测试
-
-### 🚧 当前重点
-
-- 扩展更多工具能力
-- 升级记忆与上下文裁剪策略
-- 继续打磨统一事件流，支撑 Web / Desktop
-- 完善 provider、恢复、安全与测试体系
-
-📌 完整执行清单见 [TODO.md](TODO.md)
-
----
-
-## 🧱 当前架构
+## 🧱 仓库结构
 
 ```text
 bananabot/
-├── __main__.py
-├── app/
-├── runtime/
-├── llm/
-├── memory/
-├── tools/
-└── infra/
+├── bananabot/
+│   ├── app/      # 应用入口、服务编排、TUI、统一契约
+│   ├── runtime/  # 运行时模型、事件、状态推进、主循环、上下文
+│   ├── memory/   # thread 存储、compact、长期记忆、working memory
+│   ├── llm/      # 模型档案、provider 规则、HTTP 请求
+│   ├── tools/    # 工具抽象、注册表、内置工具
+│   └── infra/    # 配置、路径、日志、状态存储
+├── docs/         # 当前实现文档
+├── refactor/     # 重构规则、计划、协作文档
+├── tests/        # 回归测试与契约测试
+├── AGENTS.md
+├── TODO.md
+└── models.toml
 ```
 
-### `app/`
-
-- 🚪 应用入口
-- 🧩 依赖组装
-- 📡 统一请求 / 响应 / 事件契约
-- 🧠 顶层服务编排
-- 🖥️ CLI / TUI 界面
-
-### `runtime/`
-
-- 🔁 Agent 主循环
-- 🧵 运行时事件
-- 🧱 上下文构建
-- 📝 提示词组织
-
-### `llm/`
-
-- 🌐 模型请求发送
-- 📥 响应解析
-- 🌊 流式 chunk 结构
-- ❗ 异常语义封装
-
-### `memory/`
-
-- 💾 session / history / summary 持久化
-- 🧠 MEMORY 长期记忆
-- 🗜️ compact 压缩服务
-- 📚 记忆源查找与加载
-
-### `tools/`
-
-- 🧰 工具抽象基类
-- 🗂️ 工具注册表
-- ⚙️ 内置工具实现
-
-### `infra/`
-
-- ⚙️ 配置加载
-- 🪵 调试日志
-- 📁 路径与运行环境规则
-
----
-
-## 🔄 主执行链路
-
-一次完整对话的大致流程：
-
-1. `bananabot/__main__.py` 启动程序
-2. `app/bootstrap.py` 组装 `Config / LLM / ToolRegistry / SessionManager`
-3. `app/service.py` 接收统一 `ChatRequest`
-4. `runtime/context_builder.py` 构建上下文
-5. `runtime/runner.py` 执行 `LLM ↔ Tool` 循环
-6. `memory/session_store.py` 写回 `session.jsonl / history.jsonl`
-7. `memory/compact_service.py` 按策略执行 compact
-8. `app/cli.py` / 未来 Web / Desktop 消费统一事件流
-
----
-
-## 🖥️ 运行方式
+## 🚀 启动
 
 ### 1. 安装依赖
 
@@ -127,19 +45,24 @@ bananabot/
 uv sync
 ```
 
-### 2. 配置环境变量
+### 2. 配置模型
 
-```bash
-cp .env.example .env
+准备 `.env` 和 `models.toml`。
+
+最少需要：
+
+```env
+DEFAULT_MODEL=qwen3.6-plus
+DASHSCOPE_API_KEY=your_key
+DEEPSEEK_API_KEY=your_key
+MINIMAX_API_KEY=your_key
+MIMO_API_KEY=your_key
+LOCAL_OMLX_API_KEY=your_key
 ```
 
-最少需要配置：
+`models.toml` 负责声明模型档案，`.env` 只负责密钥和运行参数。
 
-```bash
-BASE_URL=...
-API_KEY=...
-LLM=...
-```
+当前内置 provider 白名单：`dashscope / deepseek / minimax / mimo / local`。
 
 ### 3. 启动交互模式
 
@@ -147,7 +70,7 @@ LLM=...
 uv run bananabot
 ```
 
-如果已经做过全局安装，也可以直接：
+如果已经安装到本地环境：
 
 ```bash
 bananabot
@@ -156,141 +79,131 @@ bananabot
 ### 4. 单次执行
 
 ```bash
-uv run bananabot "帮我分析一下当前目录"
+uv run bananabot "帮我分析当前目录"
 ```
 
----
+### 5. Provider smoke 验证
 
-## 🧭 TUI 体验
+```bash
+uv run python -m bananabot.llm.smoke
+```
 
-当前 TUI 支持：
+只验证某个模型：
 
-- 📜 可滚动会话纸面
-- 🌊 assistant 正文流式输出
-- 🧠 thinking 展示与收敛
-- 🔧 工具调用摘要展示
-- ⌨️ 持续交互输入
+```bash
+uv run python -m bananabot.llm.smoke --alias qwen3.6-plus
+```
 
-常用操作：
+## 🖥️ TUI 命令
 
-- `Enter` 发送
-- `Esc` 聚焦输入框
-- `Ctrl+L` 清理当前屏幕临时过程
-- `Ctrl+R` 重载当前会话
-- 鼠标滚轮查看历史
+- `/help`：显示命令列表
+- `/model`：打开模型切换列表
+- `/new`：创建新 thread
+- `/threads`：打开 thread 列表
+- `/status`：查看当前 thread 状态
+- `/compact`：压缩当前 thread
+- `/banana`：查看全局 / 项目 BANANA 指令
+- `/clear`：清空当前窗口消息
+- `/exit`：退出
 
----
+常用快捷键：
 
-## 🛠️ 内置命令
+- `Enter`：发送 / 选择
+- `Esc`：回到输入框
+- `Ctrl+L`：清理当前屏幕上的临时过程
+- `Ctrl+R`：从磁盘重载当前 thread
 
-交互模式支持：
+## 🔄 主执行链路
 
-- `/new`：开启新会话
-- `/sessions`：打开内联会话切换列表，回车直接选中
-- `/clear`：清空当前会话窗口
-- `/status`：查看当前状态
-- `/compact`：强制执行压缩
-- `/banana`：查看全局 / 项目指令文件
-- `/help`：显示帮助
-- `/exit`：退出程序
+1. `app/bootstrap.py` 组装 `Config`、`LLMClient`、`ToolRegistry`、`ThreadStoreManager`
+2. `app/service.py` 接收 `TaskRequest`
+3. 用户消息写入当前 thread 窗口和历史日志
+4. `runtime/context_engine.py` 组装模型上下文
+5. `runtime/runner.py` 执行 `LLM -> tool -> LLM` 循环
+6. `runtime/coordinator.py` 推进 `thread / task_run / turn / step`
+7. `infra/runtime_state_store.py` 持续写 runtime 状态与事件日志
+8. `memory/working_memory.py` 回写 thread/task working memory
+9. `memory/compact_service.py` 按阈值压缩旧消息
+10. `app/cli.py` 消费统一事件流并渲染 TUI
 
----
+## 🧾 对外契约
 
-## 💾 会话与记忆
+当前公共请求/响应模型已经统一为：
 
-当前会话目录下通常会包含：
+- `TaskRequest`
+- `TaskResponse`
+- `AgentEvent`
 
-- `session.jsonl`：当前短期窗口消息
-- `history.jsonl`：完整历史记录
-- `summary.jsonl`：compact 摘要结果
-- `MEMORY.md`：长期记忆
+当前公共服务入口：
 
-这套分层的意义是：
+- `AppService.run_task()`
+- `AppService.run_task_stream()`
+- `AppService.get_thread_status()`
+- `AppService.list_threads()`
+- `AppService.switch_model()`
 
-- `session` 负责当前上下文窗口
-- `history` 保留完整历史
-- `summary` 负责阶段性压缩
-- `MEMORY` 负责长期沉淀
+## 💾 存储结构
 
-这也是当前项目后续继续扩展记忆系统的基础。
+默认目录在 `~/.bananabot/`。
 
----
+### thread 消息目录
 
-## 🌊 流式输出与事件流
+```text
+~/.bananabot/sessions/<thread_id>/
+├── session.jsonl
+├── history.jsonl
+├── summary.jsonl
+└── MEMORY.md
+```
 
-项目现在已经支持统一事件流：
+含义：
 
-- `assistant_delta`
-- `assistant_reasoning_delta`
-- `tool_call_started`
-- `tool_call_finished`
-- `assistant_message`
-- `done`
-- `error`
+- `session.jsonl`：当前短期窗口
+- `history.jsonl`：完整历史
+- `summary.jsonl`：compact 摘要
+- `MEMORY.md`：thread 长期记忆
 
-其中最重要的统一入口在：
+### runtime 状态目录
 
-- `AppService.chat()`
-- `AppService.chat_stream()`
-
-这意味着后续 CLI、Web、桌面端都可以尽量复用同一套运行时，而不是每个端自己再写一套 Agent 流程。
-
----
+```text
+~/.bananabot/runtime-state/
+├── threads/
+├── task_runs/
+├── turns/
+├── steps/
+└── event_log.jsonl
+```
 
 ## 🧪 测试
 
-当前基础回归测试可直接运行：
+运行全量测试：
 
 ```bash
-.venv/bin/python -m unittest discover -s tests -v
+uv run python -m unittest
 ```
 
-测试覆盖的重点包括：
+快速检查：
 
-- ✅ assistant / user 持久化
-- ✅ 工具调用链路
-- ✅ 流式 delta
-- ✅ reasoning 事件
-- ✅ compact 基础行为
-- ✅ context 构建优先级
-- ✅ TUI 基础交互
+```bash
+uv run python -m compileall bananabot tests
+```
 
----
+## 📚 文档
 
-## 📚 文档索引
+- [仓库总览](docs/00-仓库总览.md)
+- [app 模块设计](docs/app%20模块设计.md)
+- [runtime 模块设计](docs/runtime%20模块设计.md)
+- [memory 模块设计](docs/memory%20模块设计.md)
+- [测试与状态存储设计](docs/测试与状态存储设计.md)
+- [TODO](TODO.md)
+- [重构文档目录](refactor/)
 
-- 📌 [AGENTS.md](AGENTS.md)
-  - 协作规则、任务边界、变更原则
-- 🗺️ [TODO.md](TODO.md)
-  - 当前执行清单与阶段路线图
-- 🧱 [docs/项目结构重构方案.md](docs/项目结构重构方案.md)
-  - 第一阶段结构重构方案与阶段边界
-- 🧠 [docs/记忆与上下文压缩系统设计.md](docs/记忆与上下文压缩系统设计.md)
-  - 记忆与上下文压缩设计
+## 🛣️ 接下来
 
----
+当前仓库已经完成第一阶段的大结构收口。后续重点是：
 
-## 🚀 未来方向
-
-接下来的演进重点不是再次推倒重构，而是在已经固定的结构上继续扩展：
-
-- 🔧 更多工具：filesystem / search / web / 安全控制
-- 🧠 更强记忆：token 预算、working memory、compact 策略升级
-- 🌐 多端复用：Web / Desktop / API
-- 🛡️ 安全能力：命令拦截、权限边界、行为审计
-- ♻️ 恢复能力：checkpoint / resume / recovery
-- 🧪 更完整的测试体系
-
-路线和优先级以 [TODO.md](TODO.md) 为准。
-
----
-
-## 🤝 协作说明
-
-如果你要继续在这个项目上开发，建议先读：
-
-1. [AGENTS.md](AGENTS.md)
-2. [TODO.md](TODO.md)
-3. `docs/` 里的对应设计文档
-
-这个项目现在最值钱的不是某一个函数，而是已经稳定下来的模块边界和统一接口。后续扩展尽量沿着现有骨架推进，不要再把结构搞回一锅粥。
+- 扩展工具体系
+- 继续升级 provider 和模型调度
+- 加入 skill 机制
+- 补桌面端 / Web 端入口
+- 完善恢复、审批、安全和端到端测试

@@ -2,6 +2,8 @@
 
 from abc import ABC, abstractmethod
 
+from .specs import ToolSpec
+
 
 class Tool(ABC):
     """所有工具的统一基类。"""
@@ -22,6 +24,19 @@ class Tool(ABC):
     def parameters(self) -> dict:
         """OpenAI function calling 格式的参数定义"""
         return {"type": "object", "properties": {}}
+
+    @property
+    def spec(self) -> ToolSpec:
+        """返回工具的标准化描述。"""
+        return ToolSpec(
+            name=self.name,
+            description=self.description,
+            parameters=self.parameters,
+        )
+
+    def definition(self) -> dict:
+        """返回给模型消费的 function calling 定义。"""
+        return self.spec.to_definition()
 
     @abstractmethod
     async def execute(self, **kwargs) -> str:

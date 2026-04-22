@@ -1,7 +1,7 @@
 """项目级长期记忆辅助对象。
 
-这个对象和 `Session` 的职责不同：
- - `Session` 管当前会话窗口与会话文件
+这个对象和 `ThreadStore` 的职责不同：
+ - `ThreadStore` 管当前 thread 的消息窗口与消息文件
  - `MemoryStore` 管项目级长期记忆与指令文件查找
 """
 

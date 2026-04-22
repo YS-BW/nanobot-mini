@@ -20,3 +20,10 @@ def find_env_file(root: Path | None = None) -> Path | None:
 
     candidate = (root or project_root()) / ".env"
     return candidate if candidate.exists() else None
+
+
+def find_models_file(root: Path | None = None) -> Path | None:
+    """查找仓库根目录下的 `models.toml` 文件。"""
+
+    candidate = (root or project_root()) / "models.toml"
+    return candidate if candidate.exists() else None

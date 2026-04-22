@@ -31,6 +31,8 @@ class LLMResponse:
     content: str | None
     tool_calls: list[ToolCall] = field(default_factory=list)
     finish_reason: str = "stop"
+    reasoning_content: str | None = None
+    assistant_message: dict | None = None
 
 
 @dataclass

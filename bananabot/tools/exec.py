@@ -3,6 +3,7 @@
 import asyncio
 
 from .base import Tool
+from .specs import ToolSpec
 
 
 class ExecTool(Tool):
@@ -29,6 +30,15 @@ class ExecTool(Tool):
 
     def __init__(self, working_dir: str = "/tmp"):
         self.working_dir = working_dir
+
+    @property
+    def spec(self) -> ToolSpec:
+        """返回 shell 工具描述。"""
+        return ToolSpec(
+            name=self.name,
+            description=self.description,
+            parameters=self.parameters,
+        )
 
     async def execute(self, command: str, timeout: int = 60, **_) -> str:
         """执行 Shell 命令。"""
